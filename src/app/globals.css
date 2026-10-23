@@ -24,3 +24,50 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Hide ugly native Windows/Chrome scrollbars while preserving smooth wheel/touch scrolling */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* UI Architecture Morphing Rules */
+[data-ui-style="claymorphism"] header > div,
+[data-ui-style="claymorphism"] main > div:first-child {
+  border-radius: 28px !important;
+  box-shadow:
+    inset 0 4px 8px rgba(255, 255, 255, 0.14),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.65),
+    0 20px 40px rgba(0, 0, 0, 0.75) !important;
+}
+
+[data-ui-style="neumorphism"] header > div,
+[data-ui-style="neumorphism"] main > div:first-child {
+  border-color: rgba(255, 255, 255, 0.03) !important;
+  box-shadow:
+    9px 9px 18px rgba(0, 0, 0, 0.85),
+    -6px -6px 16px rgba(255, 255, 255, 0.035) !important;
+}
+
+[data-ui-style="brutalism"] header > div,
+[data-ui-style="brutalism"] main > div:first-child {
+  border-radius: 0px !important;
+  border-width: 2px !important;
+  border-color: var(--dt-accent) !important;
+  box-shadow: 6px 6px 0px 0px var(--dt-accent) !important;
+}
+
+[data-ui-style="cyberpunk"] header > div,
+[data-ui-style="cyberpunk"] main > div:first-child {
+  border-radius: 4px !important;
+  border-color: var(--dt-accent) !important;
+  box-shadow:
+    0 0 25px -4px var(--dt-accent),
+    inset 0 0 12px -4px var(--dt-accent) !important;
+}
