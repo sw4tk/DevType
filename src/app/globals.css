@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800;900&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -70,4 +71,51 @@ body {
   box-shadow:
     0 0 25px -4px var(--dt-accent),
     inset 0 0 12px -4px var(--dt-accent) !important;
+}
+
+/* Poppins Brand Typography */
+.font-poppins {
+  font-family: "Poppins", sans-serif !important;
+  letter-spacing: -0.025em;
+}
+
+/* 3D Extruded Avatar & Badge Effect */
+.avatar-3d {
+  transform: perspective(500px) rotateX(8deg) rotateY(-8deg) translateZ(4px);
+  box-shadow:
+    -2px 3px 0px #060609,
+    -3px 5px 10px rgba(0, 0, 0, 0.9),
+    inset 0 1px 1px rgba(255, 255, 255, 0.45),
+    0 0 14px var(--dt-accent, #10b981);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+}
+
+.group:hover .avatar-3d,
+.avatar-3d:hover {
+  transform: perspective(500px) rotateX(0deg) rotateY(0deg) translateY(-2px) scale(1.06);
+  box-shadow:
+    0 5px 0px #060609,
+    0 10px 20px rgba(0, 0, 0, 0.95),
+    0 0 20px var(--dt-accent, #10b981);
+}
+
+
+/* 3D Terminal Logo Badge (>_ symbol) */
+.terminal-logo-3d {
+  transform: perspective(400px) rotateX(6deg) rotateY(-6deg) translateZ(3px);
+  box-shadow:
+    -2px 2px 0px #040406,
+    -3px 4px 10px rgba(0, 0, 0, 0.85),
+    inset 0 1px 1px rgba(255, 255, 255, 0.4),
+    0 0 12px var(--dt-accent, #10b981);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+}
+
+.group:hover .terminal-logo-3d,
+.terminal-logo-3d:hover {
+  transform: perspective(400px) rotateX(0deg) rotateY(0deg) translateY(-2px) scale(1.05);
+  box-shadow:
+    0 4px 0px #040406,
+    0 8px 18px rgba(0, 0, 0, 0.9),
+    0 0 16px var(--dt-accent, #10b981);
 }

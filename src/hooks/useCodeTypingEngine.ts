@@ -246,7 +246,11 @@ export function useCodeTypingEngine(
     const targetCode = typeof newSnippet === 'string' ? newSnippet : baseSnippetRef.current;
     baseSnippetRef.current = targetCode;
     codeRef.current = targetCode;
-    indexRef.current = 0;
+    let firstNonSpace = 0;
+    while (firstNonSpace < targetCode.length && (targetCode[firstNonSpace] === ' ' || targetCode[firstNonSpace] === '\t')) {
+      firstNonSpace++;
+    }
+    indexRef.current = firstNonSpace;
     statusRef.current = 'idle';
     startTimeRef.current = null;
     lastKeyTimeRef.current = null;
@@ -261,7 +265,7 @@ export function useCodeTypingEngine(
     errorBreakdownRef.current = { brackets: 0, operators: 0, punctuation: 0, alphanumeric: 0 };
 
     setCode(targetCode);
-    setCurrentIndex(0);
+    setCurrentIndex(firstNonSpace);
     setGhostIndex(0);
     setStatus('idle');
     setTimeLeft(timeLimitRef.current);
@@ -496,6 +500,22 @@ export function useCodeTypingEngine(
 
       const expectedChar = activeCode[idx];
 
+      // Guard: If the line was already auto-indented (previous char is space/tab after \n) and user instinctively presses Space, ignore it instead of marking a false error!
+      if (
+        e.key === ' ' &&
+        expectedChar !== ' ' &&
+        idx > 0 &&
+        (activeCode[idx - 1] === ' ' || activeCode[idx - 1] === '\t')
+      ) {
+        let scan = idx - 1;
+        while (scan > 0 && (activeCode[scan] === ' ' || activeCode[scan] === '\t')) {
+          scan--;
+        }
+        if (scan === 0 || activeCode[scan] === '\n') {
+          return;
+        }
+      }
+
       if (expectedChar === ' ' || expectedChar === '\t') {
         let lookahead = idx;
         while (
@@ -601,7 +621,8 @@ export function useCodeTypingEngine(
 
       let next = idx + 1;
 
-      if (typedChar === '\n' && !isError) {
+      // Always skip leading indentation spaces whenever we cross a newline (even if \n had a typo)
+      if (expectedChar === '\n' || typedChar === '\n') {
         while (
           next < activeCode.length &&
           (activeCode[next] === ' ' || activeCode[next] === '\t')

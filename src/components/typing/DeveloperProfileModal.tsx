@@ -633,7 +633,7 @@ export default function DeveloperProfileModal({
                           'https://github.com/identicons/devtype.png';
                       }}
                       style={{ borderColor: accentColor }}
-                      className="w-16 h-16 rounded-2xl border-2 object-cover bg-black shrink-0 shadow-lg"
+                      className="w-16 h-16 rounded-2xl border-2 object-cover bg-black shrink-0 avatar-3d"
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">

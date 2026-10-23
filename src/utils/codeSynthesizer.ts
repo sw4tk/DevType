@@ -1,9 +1,10 @@
-import { LANGUAGES, LanguageSpec, SnippetItem, SnippetLength } from '@/constants/languages';
+import { LANGUAGES, SnippetItem, SnippetLength } from '@/constants/languages';
 
-const seenSyntheticHashes = new Set<string>();
-let lastPatternIndex = -1;
+export function pick<T>(arr: T[], rng: () => number = Math.random): T {
+  return arr[Math.floor(rng() * arr.length)];
+}
 
-export function createSeededRandom(seedStr: string) {
+export function createSeededRandom(seedStr: string): () => number {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < seedStr.length; i++) {
     h ^= seedStr.charCodeAt(i);
@@ -17,244 +18,265 @@ export function createSeededRandom(seedStr: string) {
   };
 }
 
-export function pick<T>(arr: T[], rng: () => number = Math.random): T {
-  return arr[Math.floor(rng() * arr.length)];
+interface DomainContext {
+  domain: string;
+  entity: string;
+  Entity: string;
+  action: string;
+  Action: string;
+  collection: string;
+  keyVar: string;
+  valVar: string;
+  errCode: string;
+  limitNum: number;
+  primeHex: string;
+  timeoutMs: number;
+  statusOk: string;
 }
 
-export function generateSnippetByFamily(
-  lang: LanguageSpec,
-  patternIdx: number,
-  rng: () => number = Math.random
-): string {
-  const verbs = [
-    'compute', 'resolve', 'dispatch', 'validate', 'transform', 'aggregate',
-    'sync', 'decode', 'compact', 'verify', 'serialize', 'schedule', 'partition',
-    'reconcile', 'quantize', 'hydrate', 'coalesce', 'multiplex', 'encrypt',
+const DOMAINS = [
+  {
+    domain: 'cache',
+    entities: ['entry', 'shard', 'bucket', 'segment', 'slot', 'page', 'frame', 'block'],
+    actions: ['evict', 'hydrate', 'lookup', 'compact', 'promote', 'invalidate', 'snapshot', 'prefetch'],
+    collections: ['lruMap', 'ringBuffer', 'slabPool', 'hashTable', 'pageIndex', 'HotTier'],
+    keys: ['cacheKey', 'shardId', 'nsPrefix', 'slotHash', 'pageAddr', 'digestKey'],
+    vals: ['payload', 'serialized', 'byteSlice', 'cachedRef', 'blob', 'record'],
+    errs: ['ERR_CACHE_MISS', 'ERR_SLAB_FULL', 'ERR_STALE_EPOCH', 'ERR_SHARD_LOCKED'],
+  },
+  {
+    domain: 'network',
+    entities: ['packet', 'socket', 'stream', 'frame', 'channel', 'session', 'tunnel', 'peer'],
+    actions: ['dispatch', 'multiplex', 'handshake', 'throttle', 'acknowledge', 'route', 'relay', 'drain'],
+    collections: ['peerPool', 'outboxQueue', 'ingressRing', 'routeTable', 'connRegistry', 'frameBuf'],
+    keys: ['peerId', 'streamId', 'seqNum', 'routeKey', 'socketFd', 'traceId'],
+    vals: ['frameBytes', 'datagram', 'headerMap', 'chunkData', 'ackPacket', 'envelope'],
+    errs: ['ERR_CONN_RESET', 'ERR_BACKPRESSURE', 'ERR_TLS_HANDSHAKE', 'ERR_TIMEOUT_EXCEEDED'],
+  },
+  {
+    domain: 'auth',
+    entities: ['token', 'session', 'principal', 'claim', 'grant', 'credential', 'policy', 'scope'],
+    actions: ['verify', 'introspect', 'rotate', 'revoke', 'elevate', 'sign', 'attest', 'decrypt'],
+    collections: ['keySet', 'claimStore', 'revocationList', 'aclMatrix', 'sessionVault', 'nonceSet'],
+    keys: ['subjectId', 'kidHeader', 'tenantId', 'nonceHash', 'sessionKey', 'policyArn'],
+    vals: ['jwtPayload', 'signature', 'digestBuf', 'grantScope', 'authContext', 'claims'],
+    errs: ['ERR_TOKEN_EXPIRED', 'ERR_INVALID_SIGNATURE', 'ERR_SCOPE_DENIED', 'ERR_NONCE_REPLAY'],
+  },
+  {
+    domain: 'database',
+    entities: ['cursor', 'transaction', 'tuple', 'walRecord', 'indexNode', 'predicate', 'snapshot', 'batch'],
+    actions: ['commit', 'checkpoint', 'vacuum', 'materialize', 'scan', 'merge', 'project', 'rebalance'],
+    collections: ['btreePage', 'memTable', 'walBuffer', 'dirtyPages', 'txRegistry', 'rowBatch'],
+    keys: ['txId', 'lsnOffset', 'primaryKey', 'pageId', 'partitionKey', 'rowHash'],
+    vals: ['tupleData', 'columnVec', 'mutationSet', 'rowSlice', 'indexEntry', 'deltaLog'],
+    errs: ['ERR_DEADLOCK_DETECTED', 'ERR_SERIALIZATION_FAILURE', 'ERR_WAL_CORRUPT', 'ERR_PAGE_SPLIT'],
+  },
+  {
+    domain: 'scheduler',
+    entities: ['task', 'fiber', 'job', 'worker', 'quota', 'deadline', 'ticket', 'future'],
+    actions: ['enqueue', 'steal', 'preempt', 'resume', 'yieldNow', 'poll', 'cancel', 'prioritize'],
+    collections: ['runQueue', 'minHeap', 'workerPool', 'parkedFibers', 'timerWheel', 'waitGraph'],
+    keys: ['taskId', 'workerIdx', 'priorityKey', 'epochTick', 'jobHandle', 'affinityMask'],
+    vals: ['taskState', 'wakerRef', 'execResult', 'timeSlice', 'contextFrame', 'budget'],
+    errs: ['ERR_QUEUE_SATURATED', 'ERR_DEADLINE_MISSED', 'ERR_WORKER_PANIC', 'ERR_CANCELED'],
+  },
+  {
+    domain: 'compiler',
+    entities: ['astNode', 'symbol', 'token', 'irBlock', 'regAlloc', 'typeVar', 'span', 'opcode'],
+    actions: ['unify', 'lower', 'inline', 'foldConstants', 'typecheck', 'emit', 'resolve', 'lex'],
+    collections: ['symbolTable', 'workList', 'cfgBlocks', 'liveRanges', 'diagBag', 'constPool'],
+    keys: ['nodeId', 'defIndex', 'scopeDepth', 'varSymbol', 'blockLabel', 'spanStart'],
+    vals: ['inferredType', 'irInstr', 'bytecode', 'constraint', 'operand', 'binding'],
+    errs: ['ERR_TYPE_MISMATCH', 'ERR_UNRESOLVED_SYMBOL', 'ERR_CYCLE_DETECTED', 'ERR_REGISTER_SPILL'],
+  },
+];
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function buildContext(rng: () => number): DomainContext {
+  const d = pick(DOMAINS, rng);
+  const entity = pick(d.entities, rng);
+  const action = pick(d.actions, rng);
+  const collection = pick(d.collections, rng);
+  const keyVar = pick(d.keys, rng);
+  const valVar = pick(d.vals, rng);
+  const errCode = pick(d.errs, rng);
+  const limitNum = pick([16, 32, 64, 128, 256, 512, 1024, 4096], rng);
+  const primeHex = pick(['0x9E3779B9', '0x5DEECE66D', '0x85EBCA6B', '0xC2B2AE35', '0x27D4EB2D'], rng);
+  const timeoutMs = pick([150, 250, 500, 1200, 2500, 5000], rng);
+  const statusOk = pick(['READY', 'COMMITTED', 'VERIFIED', 'ACTIVE', 'SYNCED'], rng);
+
+  return {
+    domain: d.domain,
+    entity,
+    Entity: cap(entity),
+    action,
+    Action: cap(action),
+    collection,
+    keyVar,
+    valVar,
+    errCode,
+    limitNum,
+    primeHex,
+    timeoutMs,
+    statusOk,
+  };
+}
+
+// ============================================================================
+// SHORT BLUEPRINTS (3 to 5 lines — crisp, meaningful guards & helpers)
+// ============================================================================
+function genShortBlock(family: string, c: DomainContext, variant: number): string {
+  if (family === 'python') {
+    const templates = [
+      `def ${c.action}_${c.entity}(${c.keyVar}: str, limit: int = ${c.limitNum}) -> bool:\n    if not ${c.keyVar} or len(${c.keyVar}) > limit:\n        raise ValueError("${c.errCode}")\n    return ${c.keyVar}.startswith("${c.domain}_")`,
+      `def compute_${c.entity}_slot(${c.keyVar}: int, mask: int = ${c.primeHex}) -> int:\n    mixed = (${c.keyVar} ^ (mask >> 16)) & 0xFFFFFFFF\n    return mixed % ${c.limitNum}`,
+      `async def fetch_${c.entity}(${c.collection}: dict, ${c.keyVar}: str):\n    record = ${c.collection}.get(${c.keyVar})\n    if record is None:\n        raise KeyError("${c.errCode}")\n    return record`,
+      `def validate_${c.valVar}(${c.valVar}: bytes, max_bytes: int = ${c.limitNum}) -> memoryview:\n    if len(${c.valVar}) == 0 or len(${c.valVar}) > max_bytes:\n        raise RuntimeError("${c.errCode}")\n    return memoryview(${c.valVar})`,
+      `def next_${c.entity}_backoff(attempt: int, base_ms: int = ${c.timeoutMs}) -> int:\n    capped = min(attempt, 8)\n    return base_ms * (1 << capped)`,
+    ];
+    return templates[variant % templates.length];
+  }
+
+  if (family === 'rust') {
+    const templates = [
+      `pub fn ${c.action}_${c.entity}(${c.keyVar}: &str, max_len: usize) -> Result<usize, &'static str> {\n    if ${c.keyVar}.is_empty() || ${c.keyVar}.len() > max_len {\n        return Err("${c.errCode}");\n    }\n    Ok(${c.keyVar}.len() ^ ${c.limitNum})\n}`,
+      `pub fn hash_${c.entity}_key(${c.keyVar}: u64) -> u64 {\n    let mut h = ${c.keyVar}.wrapping_mul(${c.primeHex});\n    h ^= h >> 17;\n    h & (${c.limitNum} - 1)\n}`,
+      `pub fn try_${c.action}(${c.collection}: &[u64], limit: u64) -> Option<u64> {\n    ${c.collection}.iter().copied().find(|&val| val > 0 && val <= limit)\n}`,
+      `pub const fn align_${c.entity}(offset: usize) -> usize {\n    let mask = ${c.limitNum} - 1;\n    (offset + mask) & !mask\n}`,
+      `pub fn verify_${c.valVar}(${c.valVar}: &[u8]) -> Result<&[u8], &'static str> {\n    if ${c.valVar}.len() < 4 { return Err("${c.errCode}"); }\n    Ok(&${c.valVar}[4..])\n}`,
+    ];
+    return templates[variant % templates.length];
+  }
+
+  if (family === 'go') {
+    const templates = [
+      `func ${c.Action}${c.Entity}(${c.keyVar} string, limit int) (string, error) {\n  if len(${c.keyVar}) == 0 || len(${c.keyVar}) > limit {\n    return "", errors.New("${c.errCode}")\n  }\n  return ${c.keyVar}, nil\n}`,
+      `func Compute${c.Entity}Shard(${c.keyVar} uint64) uint64 {\n  mixed := (${c.keyVar} ^ (${c.keyVar} >> 16)) * ${c.primeHex}\n  return mixed % ${c.limitNum}\n}`,
+      `func Is${c.Entity}Valid(${c.valVar} []byte) bool {\n  return len(${c.valVar}) > 0 && len(${c.valVar}) <= ${c.limitNum}\n}`,
+    ];
+    return templates[variant % templates.length];
+  }
+
+  if (family === 'sql') {
+    const templates = [
+      `SELECT ${c.keyVar}, COUNT(*) AS total_${c.entity}\nFROM ${c.domain}_${c.collection}\nWHERE status = '${c.statusOk}' AND latency_ms < ${c.timeoutMs}\nGROUP BY ${c.keyVar}\nHAVING COUNT(*) >= ${Math.min(c.limitNum, 32)};`,
+      `UPDATE ${c.domain}_${c.collection}\nSET status = '${c.statusOk}', updated_at = NOW()\nWHERE ${c.keyVar} = $1 AND retry_count < 5\nRETURNING ${c.keyVar}, status;`,
+    ];
+    return templates[variant % templates.length];
+  }
+
+  if (family === 'shell') {
+    const templates = [
+      `#!/usr/bin/env bash\nset -euo pipefail\nif [[ -z "\${${c.keyVar.toUpperCase()}:-}" ]]; then\n  echo "${c.errCode}: missing ${c.keyVar}" >&2; exit 1\nfi`,
+      `for ${c.entity} in $(seq 1 ${Math.min(c.limitNum, 16)}); do\n  curl -fsSL "https://api.internal/${c.domain}/\${${c.entity}}" || exit 1\ndone`,
+    ];
+    return templates[variant % templates.length];
+  }
+
+  // Default TS / JS / C++ / JVM style
+  const templates = [
+    `export function ${c.action}${c.Entity}(${c.keyVar}: string, limit = ${c.limitNum}): boolean {\n  if (!${c.keyVar} || ${c.keyVar}.length > limit) {\n    throw new Error("${c.errCode}");\n  }\n  return ${c.keyVar}.startsWith("${c.domain}:");\n}`,
+    `export const compute${c.Entity}Slot = (${c.keyVar}: number): number => {\n  const mixed = (${c.keyVar} ^ (${c.keyVar} >>> 16)) * ${c.primeHex};\n  return (mixed >>> 0) % ${c.limitNum};\n};`,
+    `export function guard${c.Entity}Payload(${c.valVar}: Uint8Array): Uint8Array {\n  if (${c.valVar}.byteLength === 0 || ${c.valVar}.byteLength > ${c.limitNum}) {\n    throw new RangeError("${c.errCode}");\n  }\n  return ${c.valVar}.subarray(0, ${c.limitNum});\n}`,
+    `export const resolve${c.Entity}Timeout = (attempt: number, baseMs = ${c.timeoutMs}): number => {\n  const shift = Math.min(Math.max(0, attempt), 6);\n  return Math.min(baseMs * (1 << shift), 30000);\n};`,
+    `export function pluck${c.Entity}<T extends Record<string, unknown>>(row: T, ${c.keyVar}: keyof T) {\n  const ${c.valVar} = row[${c.keyVar}];\n  if (${c.valVar} === undefined) throw new Error("${c.errCode}");\n  return ${c.valVar};\n}`,
   ];
-  const nouns = [
-    'Frame', 'Packet', 'Buffer', 'Vector', 'Token', 'Batch', 'Matrix',
-    'Cursor', 'Signal', 'Shard', 'Socket', 'Ledger', 'Tensor', 'Payload',
-    'Segment', 'Merkle', 'Bucket', 'Stream', 'Digest', 'Inode',
+  return templates[variant % templates.length];
+}
+
+// ============================================================================
+// MEDIUM BLUEPRINTS (8 to 14 lines — complete, realistic single functions)
+// ============================================================================
+function genMediumBlock(family: string, c: DomainContext, variant: number): string {
+  if (family === 'python') {
+    const templates = [
+      `def ${c.action}_${c.entity}_batch(items: list[dict], max_size: int = ${c.limitNum}) -> list[str]:\n    accepted: list[str] = []\n    for ${c.entity} in items:\n        ${c.keyVar} = ${c.entity}.get("${c.keyVar}")\n        if not ${c.keyVar}:\n            raise ValueError("${c.errCode}")\n        if ${c.entity}.get("status") == "${c.statusOk}":\n            accepted.append(str(${c.keyVar}))\n        if len(accepted) >= max_size:\n            break\n    return accepted`,
+      `class ${c.Entity}Limiter:\n    def __init__(self, capacity: int = ${c.limitNum}, window_ms: int = ${c.timeoutMs}):\n        self.capacity = capacity\n        self.window_ms = window_ms\n        self.${c.collection}: dict[str, int] = {}\n\n    def allow_${c.action}(self, ${c.keyVar}: str) -> bool:\n        used = self.${c.collection}.get(${c.keyVar}, 0)\n        if used >= self.capacity:\n            return False\n        self.${c.collection}[${c.keyVar}] = used + 1\n        return True`,
+      `def binary_${c.action}_${c.entity}(sorted_keys: list[int], target: int) -> int:\n    low, high = 0, len(sorted_keys) - 1\n    while low <= high:\n        mid = (low + high) // 2\n        probe = sorted_keys[mid]\n        if probe == target:\n            return mid\n        if probe < target:\n            low = mid + 1\n        else:\n            high = mid - 1\n    return -1`,
+    ];
+    return templates[variant % templates.length];
+  }
+
+  if (family === 'rust') {
+    const templates = [
+      `pub fn ${c.action}_${c.entity}_batch(${c.collection}: &[u64], threshold: u64) -> Result<Vec<u64>, &'static str> {\n    if ${c.collection}.is_empty() {\n        return Err("${c.errCode}");\n    }\n    let mut out = Vec::with_capacity(${c.collection}.len().min(${c.limitNum}));\n    for &${c.keyVar} in ${c.collection}.iter() {\n        if ${c.keyVar} >= threshold {\n            out.push(${c.keyVar} ^ ${c.primeHex});\n        }\n    }\n    Ok(out)\n}`,
+      `pub struct ${c.Entity}Window {\n    pub capacity: usize,\n    pub count: usize,\n    pub mask: u64,\n}\n\nimpl ${c.Entity}Window {\n    pub fn try_${c.action}(&mut self, ${c.keyVar}: u64) -> Result< usize, &'static str > {\n        if self.count >= self.capacity {\n            return Err("${c.errCode}");\n        }\n        self.mask ^= ${c.keyVar}.wrapping_mul(${c.primeHex});\n        self.count += 1;\n        Ok(self.count)\n    }\n}`,
+      `pub fn scan_${c.entity}_ring(buf: &[u8], delimiter: u8) -> Option<(usize, u32)> {\n    let mut checksum: u32 = 0;\n    for (idx, &byte) in buf.iter().enumerate() {\n        checksum = checksum.wrapping_add(u32::from(byte));\n        if byte == delimiter && idx > 0 {\n            return Some((idx, checksum));\n        }\n    }\n    None\n}`,
+    ];
+    return templates[variant % templates.length];
+  }
+
+  if (family === 'go') {
+    const templates = [
+      `func ${c.Action}${c.Entity}Batch(items []string, limit int) ([]string, error) {\n  if len(items) == 0 {\n    return nil, errors.New("${c.errCode}")\n  }\n  out := make([]string, 0, limit)\n  for _, ${c.keyVar} := range items {\n    if len(${c.keyVar}) > 0 && len(out) < limit {\n      out = append(out, ${c.keyVar})\n    }\n  }\n  return out, nil\n}`,
+      `type ${c.Entity}Tracker struct {\n  mu sync.Mutex\n  counts map[string]int\n  limit int\n}\n\nfunc (t *${c.Entity}Tracker) Record(${c.keyVar} string) bool {\n  t.mu.Lock()\n  defer t.mu.Unlock()\n  if t.counts[${c.keyVar}] >= t.limit {\n    return false\n  }\n  t.counts[${c.keyVar}]++\n  return true\n}`,
+    ];
+    return templates[variant % templates.length];
+  }
+
+  // Default TS / JS / C++ / JVM style
+  const templates = [
+    `export function ${c.action}${c.Entity}Batch(\n  ${c.collection}: Map<string, number>,\n  limit = ${c.limitNum}\n): string[] {\n  const selected: string[] = [];\n  for (const [${c.keyVar}, weight] of ${c.collection}.entries()) {\n    if (weight <= 0) continue;\n    selected.push(\`\${${c.keyVar}}:\${weight}\`);\n    if (selected.length >= limit) break;\n  }\n  if (selected.length === 0) throw new Error("${c.errCode}");\n  return selected;\n}`,
+    `export async function ${c.action}WithRetry<T>(\n  task: () => Promise<T>,\n  maxRetries = 4,\n  baseDelayMs = ${c.timeoutMs}\n): Promise<T> {\n  for (let attempt = 0; attempt <= maxRetries; attempt++) {\n    try {\n      return await task();\n    } catch (err) {\n      if (attempt === maxRetries) throw new Error("${c.errCode}");\n      const backoff = baseDelayMs * (1 << attempt);\n      await new Promise((r) => setTimeout(r, backoff));\n    }\n  }\n  throw new Error("${c.errCode}");\n}`,
+    `export class ${c.Entity}RingBuffer<T> {\n  private readonly buf: Array<T | undefined>;\n  private head = 0;\n  private tail = 0;\n  constructor(private readonly cap = ${c.limitNum}) {\n    this.buf = new Array<T | undefined>(cap);\n  }\n  public ${c.action}(item: T): boolean {\n    if (this.tail - this.head >= this.cap) return false;\n    this.buf[this.tail++ % this.cap] = item;\n    return true;\n  }\n}`,
+    `export function verify${c.Entity}Digest(\n  ${c.valVar}: Uint8Array,\n  expectedSeed = ${c.primeHex}\n): number {\n  if (${c.valVar}.byteLength === 0) throw new Error("${c.errCode}");\n  let acc = expectedSeed >>> 0;\n  for (let i = 0; i < ${c.valVar}.byteLength; i++) {\n    acc = Math.imul(acc ^ ${c.valVar}[i], 0x01000193) >>> 0;\n  }\n  return acc;\n}`,
   ];
-  const vars = [
-    'stride', 'offset', 'pivot', 'delta', 'limit', 'cursor', 'epoch',
-    'weight', 'quota', 'mask', 'radix', 'depth', 'window', 'nonce', 'bound',
-  ];
+  return templates[variant % templates.length];
+}
 
-  const v = pick(verbs, rng);
-  const n = pick(nouns, rng);
-  const fnCamel = `${v}${n}`;
-  const fnSnake = `${v}_${n.toLowerCase()}`;
-  const a = pick(vars, rng);
-  const b = pick(vars.filter((x) => x !== a), rng);
-  const c = pick(vars.filter((x) => x !== a && x !== b), rng);
-  const p1 = pick([7, 13, 17, 29, 31, 53, 97, 127, 251, 509], rng);
-  const p2 = pick([3, 4, 6, 8, 12, 16, 24, 32, 48, 64], rng);
-  const hex = pick(['0x1F', '0x3F', '0x7F', '0xFF', '0xA5', '0x0F', '0x5A', '0xC3'], rng);
-  const op = pick(['^', '&', '|', '+'], rng);
-
-  // 10 Universal Algorithmic Blueprints for C-like / TS / JS / Rust / Python / Go
-  if (lang.family === 'ts' || lang.family === 'js') {
-    const blueprints = [
-      // 0: Binary Search
-      `export function ${fnCamel}(nums: readonly number[], target: number): number {\n  let low = 0, high = nums.length - 1;\n  while (low <= high) {\n    const ${a} = (low + high) >>> 1;\n    if (nums[${a}] === target) return ${a};\n    if (nums[${a}] < target) low = ${a} + 1;\n    else high = ${a} - 1;\n  }\n  return -1;\n}`,
-      // 1: Token Bucket Rate Limiter
-      `export class ${n}RateLimiter {\n  private tokens = ${p1};\n  private lastRefill = Date.now();\n  consume(${a}: number, rate = ${p2}): boolean {\n    const now = Date.now();\n    this.tokens = Math.min(${p1}, this.tokens + ((now - this.lastRefill) / 1000) * rate);\n    this.lastRefill = now;\n    if (this.tokens < ${a}) return false;\n    this.tokens -= ${a};\n    return true;\n  }\n}`,
-      // 2: Sliding Window Maximum Sum
-      `export function ${fnCamel}Window(arr: number[], ${a} = ${p2}): number {\n  let ${b} = 0, maxSum = 0;\n  for (let i = 0; i < arr.length; i++) {\n    ${b} += arr[i];\n    if (i >= ${a}) ${b} -= arr[i - ${a}];\n    if (${b} > maxSum) maxSum = ${b};\n  }\n  return maxSum;\n}`,
-      // 3: Fenwick / Binary Indexed Tree Update
-      `export function update${n}Tree(tree: Int32Array, idx: number, ${a}: number): void {\n  let ${b} = idx + 1;\n  while (${b} < tree.length) {\n    tree[${b}] = (tree[${b}] + ${a}) ${op} ${hex};\n    ${b} += ${b} & -${b};\n  }\n}`,
-      // 4: LRU Cache Eviction Step
-      `export class ${n}Cache<K, V> {\n  private store = new Map<K, V>();\n  constructor(private readonly ${a} = ${p1}) {}\n  set(key: K, val: V): void {\n    if (this.store.has(key)) this.store.delete(key);\n    else if (this.store.size >= this.${a}) {\n      const oldest = this.store.keys().next().value;\n      if (oldest !== undefined) this.store.delete(oldest);\n    }\n    this.store.set(key, val);\n  }\n}`,
-      // 5: FNV-1a Fast Checksum Hasher
-      `export function hash${n}Buffer(bytes: Uint8Array, seed = ${hex}): number {\n  let ${a} = 0x811c9dc5 ^ seed;\n  for (let i = 0; i < bytes.length; i++) {\n    ${a} ^= bytes[i];\n    ${a} = Math.imul(${a}, 0x01000193);\n  }\n  return ${a} >>> 0;\n}`,
-      // 6: Async Retry Backoff Executor
-      `export async function ${fnCamel}WithRetry<T>(task: () => Promise<T>, retries = ${p2}): Promise<T> {\n  for (let ${a} = 0; ${a} < retries; ${a}++) {\n    try {\n      return await task();\n    } catch (err) {\n      if (${a} === retries - 1) throw err;\n      await new Promise((r) => setTimeout(r, (1 << ${a}) * ${p1}));\n    }\n  }\n  throw new Error("Exhausted");\n}`,
-      // 7: Event Emitter Pub/Sub Bus
-      `export class ${n}Emitter<E extends Record<string, unknown>> {\n  private listeners = new Map<keyof E, Set<(payload: any) => void>>();\n  emit<K extends keyof E>(event: K, ${a}: E[K]): number {\n    const group = this.listeners.get(event);\n    if (!group) return 0;\n    group.forEach((fn) => fn(${a}));\n    return group.size;\n  }\n}`,
-      // 8: Matrix Transpose & Scale
-      `export function transpose${n}(grid: number[][], ${a} = ${p2}): number[][] {\n  const rows = grid.length, cols = grid[0]?.length ?? 0;\n  const out = Array.from({ length: cols }, () => new Array<number>(rows));\n  for (let r = 0; r < rows; r++) {\n    for (let c = 0; c < cols; c++) out[c][r] = grid[r][c] * ${a};\n  }\n  return out;\n}`,
-      // 9: Ring Buffer Dequeue
-      `export function drain${n}Queue(ring: Float64Array, head: number, tail: number): number {\n  let ${b} = 0, ${c} = head;\n  while (${c} !== tail) {\n    ${b} += ring[${c}] * ${p2};\n    ${c} = (${c} + 1) % ring.length;\n  }\n  return Math.round(${b});\n}`,
-    ];
-    return blueprints[patternIdx % blueprints.length];
-  }
-
-  if (lang.family === 'rust') {
-    const blueprints = [
-      `pub fn ${fnSnake}(slice: &[i32], ${a}: i32) -> Vec<i32> {\n  let mut out = Vec::with_capacity(slice.len());\n  for (idx, &val) in slice.iter().enumerate() {\n    let ${b} = (val ^ ${p1}) + ((idx as i32) << 2);\n    if ${b} >= ${a} {\n      out.push(${b} & ${hex});\n    }\n  }\n  out\n}`,
-      `pub struct ${n}Pool<T> {\n  items: Vec<T>,\n  ${a}: usize,\n}\nimpl<T: Clone> ${n}Pool<T> {\n  pub fn acquire(&mut self) -> Option<T> {\n    if self.${a} == 0 { return None; }\n    self.${a} -= 1;\n    self.items.get(self.${a}).cloned()\n  }\n}`,
-      `pub fn binary_partition(nums: &[i64], ${a}: i64) -> (usize, i64) {\n  let mut ${b} = 0usize;\n  let mut sum = 0i64;\n  for &x in nums.iter().filter(|&&v| v >= ${a}) {\n    ${b} += 1;\n    sum = sum.wrapping_add(x ^ ${hex});\n  }\n  (${b}, sum)\n}`,
-      `pub fn crc_digest(bytes: &[u8], seed: u32) -> u32 {\n  bytes.iter().fold(seed ^ ${hex}, |${a}, &byte| {\n    let ${b} = (${a} ^ (byte as u32)).rotate_left(${p2 % 7 + 1});\n    ${b}.wrapping_mul(${p1} as u32)\n  })\n}`,
-      `pub fn merge_sorted<T: Ord + Copy>(left: &[T], right: &[T]) -> Vec<T> {\n  let (mut i, mut j) = (0, 0);\n  let mut out = Vec::with_capacity(left.len() + right.len());\n  while i < left.len() && j < right.len() {\n    if left[i] <= right[j] { out.push(left[i]); i += 1; }\n    else { out.push(right[j]); j += 1; }\n  }\n  out.extend_from_slice(&left[i..]);\n  out.extend_from_slice(&right[j..]);\n  out\n}`,
-    ];
-    return blueprints[patternIdx % blueprints.length];
-  }
-
-  if (lang.family === 'python') {
-    const blueprints = [
-      `def ${fnSnake}(records: list[int], ${a}: int = ${p1}) -> list[int]:\n  ${b}: list[int] = []\n  for idx, val in enumerate(records):\n    score = (val * ${p2}) ^ (idx + ${a})\n    if score >= ${a}:\n      ${b}.append(score & ${hex})\n  return ${b}`,
-      `def top_k_${n.toLowerCase()}(weights: dict[str, int], k: int = ${p2}) -> list[str]:\n  ranked = sorted(weights.items(), key=lambda item: item[1], reverse=True)\n  return [key for key, val in ranked[:k] if val >= ${p1}]`,
-      `class ${n}Window:\n  def __init__(self, capacity: int = ${p2}) -> None:\n    self.capacity = capacity\n    self.buffer: list[float] = []\n  def push(self, ${a}: float) -> float:\n    self.buffer.append(${a})\n    if len(self.buffer) > self.capacity:\n      self.buffer.pop(0)\n    return sum(self.buffer) / len(self.buffer)`,
-      `def dijkstra_step(adj: dict[int, list[tuple[int, int]]], start: int) -> dict[int, int]:\n  dist: dict[int, int] = {start: 0}\n  queue: list[int] = [start]\n  for u in queue:\n    for v, ${a} in adj.get(u, []):\n      if v not in dist or dist[u] + ${a} < dist[v]:\n        dist[v] = dist[u] + ${a}\n        queue.append(v)\n  return dist`,
-      `defsliding_${fnSnake}(nums: list[int], ${a}: int = ${p2}) -> int:\n  ${b} = sum(nums[:${a}])\n  best = ${b}\n  for i in range(${a}, len(nums)):\n    ${b} += nums[i] - nums[i - ${a}]\n    if ${b} > best:\n      best = ${b}\n  return best`,
-    ];
-    return blueprints[patternIdx % blueprints.length];
-  }
-
-  if (lang.family === 'go') {
-    const blueprints = [
-      `func ${fnCamel}(input []int, ${a} int) []int {\n  out := make([]int, 0, ${p2})\n  for idx, val := range input {\n    ${b} := (val ^ ${p1}) + idx*2\n    if ${b} >= ${a} {\n      out = append(out, ${b}&${hex})\n    }\n  }\n  return out\n}`,
-      `func ${n}Worker(jobs <-chan int, results chan<- int, ${a} int) {\n  for raw := range jobs {\n    ${b} := (raw * ${p2}) ^ ${a}\n    if ${b} >= ${p1} {\n      results <- ${b}\n    }\n  }\n}`,
-      `type ${n}Broker struct {\n  subs map[string][]chan []byte\n  ${a} int\n}\nfunc (b *${n}Broker) Publish(topic string, msg []byte) int {\n  targets := b.subs[topic]\n  for _, ch := range targets {\n    select {\n    case ch <- msg:\n    default:\n    }\n  }\n  return len(targets)\n}`,
-    ];
-    return blueprints[patternIdx % blueprints.length];
-  }
-
-  switch (lang.family) {
-    case 'cpp':
-      return `template <typename T>\nstd::vector<T> ${fnSnake}(const std::vector<T>& buf, T ${a}) {\n  std::vector<T> out;\n  out.reserve(buf.size());\n  for (size_t i = 0; i < buf.size(); ++i) {\n    T ${b} = (buf[i] ^ ${hex}) + static_cast<T>(i * ${p2});\n    if (${b} >= ${a}) out.push_back(${b});\n  }\n  return out;\n}`;
-    case 'c':
-      return `size_t ${fnSnake}(const uint32_t *src, uint32_t *dst, size_t len) {\n  size_t ${a} = 0;\n  for (size_t i = 0; i < len; ++i) {\n    uint32_t ${b} = (src[i] << 2) ^ ${hex}U;\n    if (${b} > ${p1}U) dst[${a}++] = ${b};\n  }\n  return ${a};\n}`;
-    case 'jvm':
-      return `public class ${n}Processor {\n  public static int ${fnCamel}(int[] data, int ${a}) {\n    int ${b} = ${p1};\n    for (int i = 0; i < data.length; i++) {\n      if (data[i] > ${a}) {\n        ${b} = (${b} * ${p2}) ^ (data[i] & ${hex});\n      }\n    }\n    return ${b};\n  }\n}`;
-    case 'functional':
-      return `${fnSnake} :: Int -> [Int] -> [Int]\n${fnSnake} ${a} xs =\n  let step x = (x * ${p2}) + ${p1}\n      valid y = y >= ${a}\n  in filter valid (map step xs)`;
-    case 'beam':
-      return `defmodule ${n}Engine do\n  def ${fnSnake}(items, ${a} \\\\ ${p1}) do\n    items\n    |> Enum.map(fn x -> Bitwise.bxor(x * ${p2}, ${a}) end)\n    |> Enum.filter(fn ${b} -> ${b} >= ${a} end)\n  end\nend`;
-    case 'lisp':
-      return `(defn ${fnSnake} [items ${a}]\n  (reduce\n    (fn [acc val]\n      (let [${b} (bit-xor (* val ${p2}) ${p1})]\n        (if (>= ${b} ${a}) (conj acc ${b}) acc)))\n    []\n    items))`;
-    case 'ruby_like':
-      return `def ${fnSnake}(items, ${a} = ${p1})\n  items.each_with_index.filter_map do |val, idx|\n    ${b} = (val * ${p2}) ^ (idx + ${a})\n    ${b} & ${hex} if ${b} >= ${a}\n  end\nend`;
-    case 'php_perl':
-      return `function ${fnSnake}(array $items, int $${a} = ${p1}): array {\n  $out = [];\n  foreach ($items as $idx => $val) {\n    $${b} = ($val * ${p2}) ^ ($idx + $${a});\n    if ($${b} >= $${a}) $out[] = $${b} & ${hex};\n  }\n  return $out;\n}`;
-    case 'lua_r_julia':
-      return `local function ${fnSnake}(items, ${a})\n  local out = {}\n  for i = 1, #items do\n    local ${b} = (items[i] * ${p2}) + (i * ${p1})\n    if ${b} >= ${a} then\n      out[#out + 1] = ${b}\n    end\n  end\n  return out\nend`;
-    case 'sql':
-      return `SELECT\n  t.id,\n  COUNT(t.${a}) AS total_${a},\n  AVG(t.${b}) FILTER (WHERE t.${b} >= ${p1}) AS avg_${b}\nFROM telemetry_${n.toLowerCase()} t\nWHERE t.created_at >= NOW() - INTERVAL '${p2} minutes'\nGROUP BY t.id\nHAVING COUNT(t.${a}) > ${p2}\nORDER BY avg_${b} DESC\nLIMIT ${p1};`;
-    case 'shell':
-      return `#!/usr/bin/env bash\nset -euo pipefail\n${fnSnake}() {\n  local ${a}="\${1:-${p1}}"\n  for f in ./logs/*.log; do\n    [[ -f "$f" ]] && grep -E "WARN|ERR" "$f" | head -n "$${a}"\n  done\n}\n${fnSnake} ${p2}`;
-    case 'config':
-      return `[package]\nname = "devtype-${n.toLowerCase()}"\nversion = "0.${p2}.${p1}"\nedition = "2024"\n\n[dependencies]\ntokio = { version = "1.${p2}", features = ["full"] }\nserde = { version = "1.0", features = ["derive"] }`;
-    case 'markup':
-      return `.studio-${n.toLowerCase()} {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(${p1}0px, 1fr));\n  gap: ${p2}px;\n  backdrop-filter: blur(${p2}px);\n  border: 1px solid rgba(255, 255, 255, 0.08);\n}`;
-    case 'shader':
-      return `@compute @workgroup_size(${p2}, 1, 1)\nfn ${fnSnake}(@builtin(global_invocation_id) id: vec3<u32>) {\n  let idx = id.x;\n  let ${a} = f32(idx * ${p1}u) * 0.015625;\n  buffer[idx] = sin(${a}) * cos(${a} * ${p2}.0);\n}`;
-    case 'hardware':
-      return `module ${fnSnake} #(\n  parameter int WIDTH = ${p2}\n) (\n  input  logic clk,\n  input  logic rst_n,\n  input  logic [WIDTH-1:0] din_${a},\n  output logic [WIDTH-1:0] dout_${b}\n);\n  always_ff @(posedge clk or negedge rst_n) begin\n    if (!rst_n) dout_${b} <= '0;\n    else dout_${b} <= (din_${a} << 1) ^ ${p1};\n  end\nendmodule`;
-    case 'asm':
-      return `global ${fnSnake}\nsection .text\n${fnSnake}:\n  xor rax, rax\n  mov rcx, rdi\n.loop_${a}:\n  add rax, ${p1}\n  xor rax, ${hex}\n  dec rcx\n  jnz .loop_${a}\n  ret`;
-    case 'hell':
-    default:
-      return `pub fn mux_${p1}<'a, F: Fn(&'a [u8]) -> Result<u32, &'static str>>(buf: &'a mut [u32], ${a}: u32) -> &'a [u32] {\n  for ptr in buf.iter_mut() {\n    *ptr = ((*ptr << 3) ^ (${hex}_u32 | !${a})) >> ${p2 % 5 + 1};\n  }\n  &buf[..]\n}`;
-  }
+// ============================================================================
+// LONG BLUEPRINTS (20 to 30 lines — multi-part cohesive module)
+// ============================================================================
+function genLongBlock(family: string, c1: DomainContext, c2: DomainContext, v1: number, v2: number): string {
+  const part1 = genMediumBlock(family, c1, v1);
+  const part2 = genMediumBlock(family, c2, v2 + 1);
+  const part3 = genShortBlock(family, c1, v1 + 2);
+  return `${part1}\n\n${part2}\n\n${part3}`;
 }
 
 export function synthesizeUnlimitedSnippet(
   langId: string,
   lengthMode: SnippetLength = 'medium',
-  seedStr?: string
+  seed?: string
 ): SnippetItem {
-  const rng = seedStr ? createSeededRandom(seedStr) : Math.random;
   const spec = LANGUAGES.find((l) => l.id === langId) || LANGUAGES[0];
+  const entropy =
+    seed ||
+    `${langId}_${lengthMode}_${Date.now()}_${Math.random().toString(36).slice(2)}_${
+      typeof performance !== 'undefined' ? performance.now() : 0
+    }`;
+  const rng = createSeededRandom(entropy);
 
-  // Ensure patternIdx always advances and never repeats consecutively
-  let patternA = Math.floor(rng() * 20);
-  if (!seedStr && patternA === lastPatternIndex) {
-    patternA = (patternA + 1 + Math.floor(Math.random() * 8)) % 20;
-  }
-  lastPatternIndex = patternA;
+  const ctx1 = buildContext(rng);
+  const ctx2 = buildContext(rng);
+  const v1 = Math.floor(rng() * 1000);
+  const v2 = Math.floor(rng() * 1000);
 
-  let block1 = generateSnippetByFamily(spec, patternA, rng);
-  let attempts = 0;
-  while (!seedStr && seenSyntheticHashes.has(block1) && attempts < 12) {
-    patternA = (patternA + 1) % 20;
-    block1 = generateSnippetByFamily(spec, patternA, rng);
-    attempts++;
-  }
-  seenSyntheticHashes.add(block1);
-  if (seenSyntheticHashes.size > 500) seenSyntheticHashes.clear();
-
-  let finalCode = block1;
+  let code = '';
   if (lengthMode === 'short') {
-    const lines = block1.split('\n');
-    finalCode = lines.slice(0, Math.min(6, lines.length)).join('\n');
-  } else if (lengthMode === 'long') {
-    const block2 = generateSnippetByFamily(spec, patternA + 3, rng);
-    finalCode = `${block1}\n\n${block2}`;
+    code = genShortBlock(spec.family, ctx1, v1);
+  } else if (lengthMode === 'medium') {
+    code = genMediumBlock(spec.family, ctx1, v1);
+  } else {
+    code = genLongBlock(spec.family, ctx1, ctx2, v1, v2);
   }
 
-  const suffix = Math.floor(100 + rng() * 899);
+  const fileNum = Math.floor(100 + rng() * 899);
+  const lineCount = code.split('\n').length;
+
   return {
     langId: spec.id,
     label: spec.name,
-    filename: seedStr ? `daily_${seedStr}.${spec.ext}` : `${spec.id}_${suffix}.${spec.ext}`,
-    badge: seedStr ? `DAILY SEED • ${seedStr}` : spec.badge,
+    filename: `${ctx1.domain}_${ctx1.entity}_${fileNum}.${spec.ext}`,
+    badge: `${lengthMode.toUpperCase()} (${lineCount}L) • ${spec.badge}`,
     category: spec.category,
-    code: finalCode,
+    code,
+    difficulty: lengthMode === 'long' ? 'hard' : lengthMode === 'medium' ? 'medium' : 'easy',
+    sourceType: 'synthetic',
   };
-}
-
-export function sanitizeAndChunkCode(rawText: string, stripComments: boolean): string[] {
-  let cleaned = rawText.replace(/\r\n/g, '\n').replace(/\t/g, '  ');
-  if (stripComments) {
-    cleaned = cleaned
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '')
-      .replace(/^\s*#.*$/gm, '');
-  }
-
-  const lines = cleaned
-    .split('\n')
-    .map((l) => l.trimEnd())
-    .filter((l) => l.trim().length > 0 && l.length <= 92);
-
-  if (lines.length <= 13) return [lines.join('\n')];
-
-  const chunks: string[] = [];
-  for (let i = 0; i < lines.length; i += 10) {
-    const slice = lines.slice(i, i + 10);
-    if (slice.length >= 5) chunks.push(slice.join('\n'));
-  }
-  return chunks.length > 0 ? chunks : [lines.slice(0, 10).join('\n')];
-}
-
-export function tokenizeSyntaxColors(code: string): string[] {
-  const colors = new Array<string>(code.length).fill('text-neutral-100');
-  const rules: { regex: RegExp; cls: string }[] = [
-    {
-      regex:
-        /\b(export|function|return|let|const|while|if|else|for|in|pub|fn|mut|def|lambda|func|range|chan|class|private|public|static|template|typename|module|endmodule|always_ff|posedge|negedge|SELECT|FROM|WHERE|GROUP|BY|HAVING|ORDER|LIMIT|local|then|end|do|defmodule|defn|global|section|async|await|impl|struct|try|catch|throw|new)\b/g,
-      cls: 'text-purple-300',
-    },
-    {
-      regex:
-        /\b(number|string|boolean|Vec|i32|i64|u8|u32|usize|list|int|float|dict|Some|None|Option|HashMap|Result|Fn|str|Map|Set|Int32Array|Uint8Array|Float64Array|readonly|void|uint32_t|size_t|f32|vec3|logic|Int|Promise)\b/g,
-      cls: 'text-cyan-300',
-    },
-    {
-      regex: /\b(\d+|0x[0-9A-Fa-f_]+|0b[01_]+)\b/g,
-      cls: 'text-amber-300',
-    },
-    {
-      regex: /([(){}[\]<>])/g,
-      cls: 'text-sky-300',
-    },
-    {
-      regex: /([=+\-*/:&|!><^~%]+)/g,
-      cls: 'text-pink-300',
-    },
-  ];
-
-  for (const { regex, cls } of rules) {
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(code)) !== null) {
-      for (let i = match.index; i < match.index + match[0].length; i++) {
-        colors[i] = cls;
-      }
-    }
-  }
-  return colors;
 }
 
 export function synthesizeSmartCoachSnippet(
@@ -265,80 +287,64 @@ export function synthesizeSmartCoachSnippet(
 ): SnippetItem {
   const patternEntries = Object.entries(weakPatterns).sort((a, b) => b[1] - a[1]);
   const keyEntries = Object.entries(missedKeys).sort((a, b) => b[1] - a[1]);
-
-  const topPattern = patternEntries[0]?.[0] || '';
+  const topPattern = patternEntries[0]?.[0] || '=>';
   const topMisses = keyEntries.slice(0, 4).map(([k]) => k);
-  const difficulty: SnippetItem['difficulty'] =
-    recentAvgWpm >= 95 ? 'expert' : recentAvgWpm >= 70 ? 'hard' : recentAvgWpm >= 45 ? 'medium' : 'easy';
-
-  const id = Math.floor(100 + Math.random() * 899);
-
-  // 1. Target Optional Chaining & Strict Equality (`?.`, `===`, `!==`)
-  if (topPattern === '?.' || topPattern === '===' || topPattern === '!==') {
-    return {
-      langId: 'typescript',
-      label: 'AI Coach • Nullish & Strict Ops',
-      filename: `coach_strict_${id}.ts`,
-      badge: `SYNTHETIC DRILL • TARGET: ${topPattern} (${difficulty.toUpperCase()})`,
-      category: 'Web',
-      difficulty,
-      sourceType: 'coach',
-      code: `export function verifyNode(node?: { meta?: { status?: string; code?: number } }): boolean {\n  const status = node?.meta?.status;\n  const code = node?.meta?.code ?? 0;\n  if (status === undefined || status !== "READY") return false;\n  return code === 200 && node?.meta !== null;\n}`,
-    };
-  }
-
-  // 2. Target Rust/C++ Scope & Thin Arrow Operators (`::`, `->`)
-  if (topPattern === '::' || topPattern === '->' || langId === 'rust') {
-    return {
-      langId: 'rust',
-      label: 'AI Coach • Scope & Return Arrows',
-      filename: `coach_arrows_${id}.rs`,
-      badge: `SYNTHETIC DRILL • TARGET: :: & -> (${difficulty.toUpperCase()})`,
-      category: 'Systems',
-      difficulty,
-      sourceType: 'coach',
-      code: `pub fn parse_header(raw: &[u8]) -> std::result::Result<u32, std::io::Error> {\n  let mut buf = std::collections::VecDeque::with_capacity(raw.len());\n  for &byte in raw.iter() {\n    buf.push_back(u32::from(byte));\n  }\n  Ok(buf.pop_front().unwrap_or_default())\n}`,
-    };
-  }
-
-  // 3. Target Fat Arrows & Functional Pipelines (`=>`)
-  if (topPattern === '=>' || topMisses.includes('=') || topMisses.includes('>')) {
-    return {
-      langId: 'typescript',
-      label: 'AI Coach • Arrow Closures',
-      filename: `coach_closures_${id}.ts`,
-      badge: `SYNTHETIC DRILL • TARGET: => (${difficulty.toUpperCase()})`,
-      category: 'Web',
-      difficulty,
-      sourceType: 'coach',
-      code: `export const composePipelines = <T>(fns: Array<(arg: T) => T>) => {\n  return (initial: T): T =>\n    fns.reduce((acc, fn) => fn(acc), initial);\n};\nexport const filterValid = (items: number[]) => items.filter((x) => x >= 0).map((x) => x * 2);`,
-    };
-  }
-
-  // 4. Target Nested Brackets & Generics (`{}`, `[]`, `()`)
-  const hasBracketMiss = topMisses.some((k) => '()[]{}<>'.includes(k));
-  if (hasBracketMiss) {
-    return {
-      langId,
-      label: 'AI Coach • Nested Brackets',
-      filename: `coach_brackets_${id}.ts`,
-      badge: `SYNTHETIC DRILL • TARGET: ${topMisses.join(' ') || '{ [ ( ) ] }'}`,
-      category: 'Web',
-      difficulty,
-      sourceType: 'coach',
-      code: `export function unpackNested<T>(matrix: Array<Record<string, [T, number][]>>): T[] {\n  const out: T[] = [];\n  for (const row of matrix) {\n    for (const [, pairs] of Object.entries(row)) {\n      if (pairs[0]?.[1] > 0) out.push(pairs[0][0]);\n    }\n  }\n  return out;\n}`,
-    };
-  }
-
-  // 5. Default Adaptive Operator Drill
+  const base = synthesizeUnlimitedSnippet(langId, recentAvgWpm > 80 ? 'long' : 'medium');
   return {
-    langId,
-    label: 'AI Coach • Bitwise & Operators',
-    filename: `coach_bitwise_${id}.rs`,
-    badge: `SYNTHETIC DRILL • TARGET: ${topMisses.join(' ') || '=> ^ & |'}`,
-    category: 'Systems',
-    difficulty,
+    ...base,
+    label: `AI Coach • ${base.label}`,
+    badge: `DRILL TARGET: ${topPattern} ${topMisses.join(' ')}`,
     sourceType: 'coach',
-    code: `pub fn mix_entropy(seed: u64, mask: u64) -> u64 {\n  let mut state = (seed ^ 0x5DEECE66D) & ((1u64 << 48) - 1);\n  state = (state.wrapping_mul(0x27BB2EE687B0B0FD) + 0xB) ^ !mask;\n  (state >> 16) | (state & 0xFFFF_0000)\n}`,
   };
+}
+
+export function sanitizeAndChunkCode(
+  rawCode: string,
+  stripComments: boolean,
+  lengthMode: SnippetLength = 'medium'
+): string[] {
+  const lines = rawCode
+    .split('\n')
+    .map((l) => l.replace(/\t/g, '  ').trimEnd())
+    .filter((l) => {
+      const t = l.trim();
+      if (!t) return false;
+      if (stripComments && (t.startsWith('//') || t.startsWith('#') || t.startsWith('/*') || t.startsWith('*'))) {
+        return false;
+      }
+      return t.length <= 92;
+    });
+
+  const minLines = lengthMode === 'short' ? 3 : lengthMode === 'medium' ? 8 : 18;
+  const maxLines = lengthMode === 'short' ? 5 : lengthMode === 'medium' ? 13 : 28;
+  const stepLines = lengthMode === 'short' ? 4 : lengthMode === 'medium' ? 10 : 22;
+
+  const chunks: string[] = [];
+  for (let i = 0; i < lines.length; i += stepLines) {
+    const slice = lines.slice(i, i + maxLines);
+    if (slice.length >= minLines) {
+      // Normalize base indentation so snippets don't start with 12 leading spaces
+      const minIndent = slice.reduce((min, line) => {
+        const match = line.match(/^(\s*)\S/);
+        return match ? Math.min(min, match[1].length) : min;
+      }, 99);
+      const normalized =
+        minIndent > 0 && minIndent < 99
+          ? slice.map((l) => l.slice(minIndent)).join('\n')
+          : slice.join('\n');
+      chunks.push(normalized);
+    }
+  }
+  return chunks;
+}
+
+export function tokenizeSyntaxColors(code: string): string[] {
+  return code.split('').map((char) => {
+    if ('(){}[]'.includes(char)) return '#c4b5fd';
+    if (';,.<>'.includes(char)) return '#94a3b8';
+    if ('+-*/=&|!%^~?:'.includes(char)) return '#f472b6';
+    if ('0123456789'.includes(char)) return '#fb923c';
+    if (char === '"' || char === "'") return '#a3e635';
+    return '#f8fafc';
+  });
 }

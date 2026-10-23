@@ -9,6 +9,7 @@ import VimDojoArena from '@/components/typing/VimDojoArena';
 import IdeCodeViewport from '@/components/typing/IdeCodeViewport';
 import CommandPaletteModal, { ModalTab } from '@/components/typing/CommandPaletteModal';
 import DeveloperProfileModal from '@/components/typing/DeveloperProfileModal';
+import StudioSettingsModal from '@/components/typing/StudioSettingsModal';
 import {
   LANGUAGES,
   QUICK_LANGUAGES,
@@ -34,23 +35,23 @@ import {
   harvestGitHubCorpusForLanguage,
 } from '@/utils/githubScraper';
 import { syncSessionToCloud } from '@/utils/supabaseClient';
-import { Zap, Layers } from 'lucide-react';
+import { Zap, Layers, Terminal, Loader2, Keyboard } from 'lucide-react';
 
 export default function TypingTest() {
+  const [isBooting, setIsBooting] = useState<boolean>(true);
+  const [bootStepText, setBootStepText] = useState<string>('Downloading user data & telemetry profile...');
+
   const [selectedLang, setSelectedLang] = useState<string>('typescript');
   const [lengthMode, setLengthMode] = useState<SnippetLength>('medium');
   const [gameMode, setGameMode] = useState<GameMode>('standard');
   const [errorMode, setErrorMode] = useState<ErrorMode>('forgiving');
   const [uiStyleId, setUiStyleId] = useState<UIStyleId>('glassmorphism');
 
-  const [activeSnippet, setActiveSnippet] = useState<SnippetItem>(() => ({
-    langId: 'typescript',
-    label: 'TypeScript',
-    filename: 'boot_stream.ts',
-    badge: 'SYNTHETIC • TS 5.8',
-    category: 'Web',
-    code: 'export const ready = true;',
-  }));
+  // New User-Configurable Layout & Typography Settings
+  const [showKeyboard, setShowKeyboard] = useState<boolean>(true);
+  const [fontSize, setFontSize] = useState<number>(15);
+
+  const [activeSnippet, setActiveSnippet] = useState<SnippetItem | null>(null);
 
   const [importedChunks, setImportedChunks] = useState<string[]>([]);
   const [importedMeta, setImportedMeta] = useState<{ title: string; badge: string } | null>(null);
@@ -70,6 +71,7 @@ export default function TypingTest() {
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
   const [paletteTab, setPaletteTab] = useState<ModalTab>('languages');
   const [profileModalOpen, setProfileModalOpen] = useState<boolean>(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState<boolean>(false);
 
   const [user, setUser] = useState<DeveloperUser | null>(null);
   const [personalBest, setPersonalBest] = useState<number>(0);
@@ -78,11 +80,10 @@ export default function TypingTest() {
   const [cumulativeMissedKeys, setCumulativeMissedKeys] = useState<Record<string, number>>({});
   const [cumulativeWeakPatterns, setCumulativeWeakPatterns] = useState<Record<string, number>>({});
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'local' | 'syncing'>('local');
+  const [syncError, setSyncError] = useState<string>('');
 
   const sparkTriggerRef = useRef<(() => void) | null>(null);
-
-  // SSR-safe date initialization (avoids calling new Date() during Next.js 16 prerender)
-  const [todayStr, setTodayStr] = useState<string>('2026-10-20');
+  const [todayStr, setTodayStr] = useState<string>('2026-10-23');
 
   const theme = useMemo(
     () => STUDIO_THEMES.find((t) => t.id === themeId) || STUDIO_THEMES[0],
@@ -96,60 +97,79 @@ export default function TypingTest() {
 
   const { playKeystroke, ambientPlaying, toggleAmbientDrone } = useMechanicalAudio(soundProfile);
 
+  // Boot Loader Sequence: Downloads User Data + Fetches Guaranteed-Random Unseen Snippet
   useEffect(() => {
-    const currentIsoDate = new Date().toISOString().slice(0, 10);
-    setTodayStr(currentIsoDate);
+    const initializeDevType = async () => {
+      const currentIsoDate = new Date().toISOString().slice(0, 10);
+      setTodayStr(currentIsoDate);
 
-    try {
+      let initialLang = pick(QUICK_LANGUAGES);
+      try {
+        const savedLang = localStorage.getItem('dt_last_lang');
+        if (savedLang) initialLang = savedLang;
+        setSelectedLang(initialLang);
+
+        const savedSmooth = localStorage.getItem('dt_smoothness') as CaretSmoothness | null;
+        const savedShape = localStorage.getItem('dt_shape') as CaretShape | null;
+        const savedTheme = localStorage.getItem('dt_theme');
+        const savedUiStyle = localStorage.getItem('dt_ui_style') as UIStyleId | null;
+        const savedErrorMode = localStorage.getItem('dt_error_mode') as ErrorMode | null;
+        const savedShowKb = localStorage.getItem('dt_show_keyboard');
+        const savedFontSize = localStorage.getItem('dt_font_size');
+        const savedLogs = localStorage.getItem('dt_session_logs');
+        const savedDaily = localStorage.getItem(`dt_daily_pb_${currentIsoDate}`);
+        const savedUser = localStorage.getItem('dt_user_profile');
+        const savedMisses = localStorage.getItem('dt_missed_keys');
+        const savedPatterns = localStorage.getItem('dt_weak_patterns');
+
+        if (savedSmooth) setCaretSmoothness(savedSmooth);
+        if (savedShape) setCaretShape(savedShape);
+        if (savedTheme) setThemeId(savedTheme);
+        if (savedUiStyle && UI_STYLES.some((s) => s.id === savedUiStyle)) setUiStyleId(savedUiStyle);
+        if (savedErrorMode) setErrorMode(savedErrorMode);
+        if (savedShowKb !== null) setShowKeyboard(savedShowKb === 'true');
+        if (savedFontSize) setFontSize(parseInt(savedFontSize, 10) || 15);
+        if (savedLogs) setSessionLogs(JSON.parse(savedLogs));
+        if (savedDaily) setDailyBestWpm(parseInt(savedDaily, 10));
+        if (savedUser) setUser(JSON.parse(savedUser));
+        if (savedMisses) setCumulativeMissedKeys(JSON.parse(savedMisses));
+        if (savedPatterns) setCumulativeWeakPatterns(JSON.parse(savedPatterns));
+      } catch {}
+
       const params = new URLSearchParams(window.location.search);
       const ghostParam = params.get('ghost');
       if (ghostParam) {
-        const decoded = JSON.parse(decodeURIComponent(atob(ghostParam)));
-        if (decoded && decoded.c && Array.isArray(decoded.t)) {
-          setActiveSnippet({
-            langId: 'custom',
-            label: decoded.l || 'Ghost Race',
-            filename: decoded.f || 'challenge.ts',
-            badge: `GHOST RACE • ${decoded.w} WPM`,
-            category: 'P2P Challenge',
-            code: decoded.c,
-          });
-          setGhostTimeline(decoded.t);
-          setGhostChallengerWpm(decoded.w || 90);
-        }
-      } else {
-        const savedLang = localStorage.getItem('dt_last_lang') || pick(QUICK_LANGUAGES);
-        setSelectedLang(savedLang);
-        setActiveSnippet(getInstantUnseenSnippet(savedLang, 'medium'));
-        harvestGitHubCorpusForLanguage(savedLang, true).catch(() => {});
+        try {
+          const decoded = JSON.parse(decodeURIComponent(atob(ghostParam)));
+          if (decoded && decoded.c && Array.isArray(decoded.t)) {
+            setActiveSnippet({
+              langId: 'custom',
+              label: decoded.l || 'Ghost Race',
+              filename: decoded.f || 'challenge.ts',
+              badge: `GHOST RACE • ${decoded.w} WPM`,
+              category: 'P2P Challenge',
+              code: decoded.c,
+            });
+            setGhostTimeline(decoded.t);
+            setGhostChallengerWpm(decoded.w || 90);
+            setIsBooting(false);
+            return;
+          }
+        } catch {}
       }
 
-      const savedSmooth = localStorage.getItem('dt_smoothness') as CaretSmoothness | null;
-      const savedShape = localStorage.getItem('dt_shape') as CaretShape | null;
-      const savedTheme = localStorage.getItem('dt_theme');
-      const savedUiStyle = localStorage.getItem('dt_ui_style') as UIStyleId | null;
-      const savedErrorMode = localStorage.getItem('dt_error_mode') as ErrorMode | null;
-      const savedLogs = localStorage.getItem('dt_session_logs');
-      const savedDaily = localStorage.getItem(`dt_daily_pb_${currentIsoDate}`);
-      const savedUser = localStorage.getItem('dt_user_profile');
-      const savedMisses = localStorage.getItem('dt_missed_keys');
-      const savedPatterns = localStorage.getItem('dt_weak_patterns');
-
-      if (savedSmooth) setCaretSmoothness(savedSmooth);
-      if (savedShape) setCaretShape(savedShape);
-      if (savedTheme) setThemeId(savedTheme);
-      if (savedUiStyle && UI_STYLES.some((s) => s.id === savedUiStyle)) {
-        setUiStyleId(savedUiStyle);
+      setBootStepText('Synthesizing non-repeating code snippet from cloud corpus...');
+      let freshSnippet = await getNextCorpusSnippet(initialLang, 'medium');
+      if (!freshSnippet) {
+        freshSnippet = getInstantUnseenSnippet(initialLang, 'medium');
       }
-      if (savedErrorMode) setErrorMode(savedErrorMode);
-      if (savedLogs) setSessionLogs(JSON.parse(savedLogs));
-      if (savedDaily) setDailyBestWpm(parseInt(savedDaily, 10));
-      if (savedUser) setUser(JSON.parse(savedUser));
-      if (savedMisses) setCumulativeMissedKeys(JSON.parse(savedMisses));
-      if (savedPatterns) setCumulativeWeakPatterns(JSON.parse(savedPatterns));
-    } catch {
-      setActiveSnippet(getInstantUnseenSnippet('typescript', 'medium'));
-    }
+      setActiveSnippet(freshSnippet);
+      harvestGitHubCorpusForLanguage(initialLang, 'medium', true).catch(() => {});
+
+      setTimeout(() => setIsBooting(false), 550);
+    };
+
+    initializeDevType();
   }, []);
 
   const recentAvgWpm = useMemo(() => {
@@ -189,7 +209,7 @@ export default function TypingTest() {
 
       const unseen = getInstantUnseenSnippet(targetLang, targetLen);
       setActiveSnippet(unseen);
-      getNextCorpusSnippet(targetLang).catch(() => {});
+      getNextCorpusSnippet(targetLang, targetLen).catch(() => {});
       return unseen.code;
     },
     [
@@ -250,10 +270,10 @@ export default function TypingTest() {
     resetEngine,
     finishNow,
   } = useCodeTypingEngine(
-    activeSnippet.code,
+    activeSnippet?.code || 'export const ready = true;',
     handleKeystrokeFeedback,
     pacemakerWpm,
-    paletteOpen || profileModalOpen || isVimMode,
+    paletteOpen || profileModalOpen || settingsModalOpen || isVimMode || isBooting,
     timeLimitSec,
     requestStreamChunk,
     isSuddenDeath,
@@ -382,7 +402,13 @@ export default function TypingTest() {
 
       setCloudSyncStatus('syncing');
       syncSessionToCloud(user, newEntry).then((res) => {
-        setCloudSyncStatus(res.ok ? 'synced' : 'local');
+        if (res.ok) {
+          setCloudSyncStatus('synced');
+          setSyncError('');
+        } else {
+          setCloudSyncStatus('local');
+          setSyncError(res.error || 'Failed to sync to Supabase');
+        }
       });
     }
   }, [
@@ -405,8 +431,7 @@ export default function TypingTest() {
         setPaletteOpen((prev) => !prev);
       } else if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
-        setPaletteTab('settings');
-        setPaletteOpen((prev) => !prev);
+        setSettingsModalOpen((prev) => !prev);
       } else if (e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         rollRandomSnippet();
@@ -415,6 +440,40 @@ export default function TypingTest() {
     window.addEventListener('keydown', onGlobalKey);
     return () => window.removeEventListener('keydown', onGlobalKey);
   }, [rollRandomSnippet]);
+
+  // Terminal Boot Loader Screen
+  if (isBooting || !activeSnippet) {
+    return (
+      <div
+        style={{ backgroundColor: theme.bg }}
+        className="w-screen h-dvh flex flex-col items-center justify-center font-mono select-none px-6"
+      >
+        <div className="w-full max-w-md bg-[#0c0c10] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+            <div className="flex items-center gap-2">
+              <Terminal className="w-4 h-4 animate-pulse" style={{ color: theme.accent }} />
+              <span className="text-xs font-extrabold text-white tracking-wider uppercase">
+                DevType // Cloud Boot
+              </span>
+            </div>
+            <span className="text-[10px] text-neutral-500">v2.5</span>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs text-neutral-300">
+            <Loader2 className="w-4 h-4 animate-spin shrink-0" style={{ color: theme.accent }} />
+            <span>{bootStepText}</span>
+          </div>
+
+          <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+            <div
+              className="h-full w-2/3 rounded-full animate-pulse"
+              style={{ backgroundColor: theme.accent, boxShadow: `0 0 12px ${theme.accent}` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (status === 'finished') {
     return (
@@ -428,6 +487,7 @@ export default function TypingTest() {
         sessionLogs={sessionLogs}
         ghostChallengerWpm={ghostChallengerWpm}
         cloudSyncStatus={cloudSyncStatus}
+        syncError={syncError}
         theme={theme}
         onRestart={() => resetEngine()}
         onNextRandom={() => {
@@ -438,6 +498,8 @@ export default function TypingTest() {
           resetEngine();
           if (tab === 'profile') {
             setProfileModalOpen(true);
+          } else if (tab === 'settings') {
+            setSettingsModalOpen(true);
           } else {
             setPaletteTab(tab);
             setPaletteOpen(true);
@@ -462,6 +524,65 @@ export default function TypingTest() {
       }
       className="relative w-screen h-dvh max-h-dvh text-neutral-300 font-mono flex flex-col justify-between overflow-hidden select-none transition-colors duration-300 px-6 py-4"
     >
+      {/* Dedicated Full-Page Studio Settings View */}
+      <StudioSettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        theme={theme}
+        uiStyleId={uiStyleId}
+        onSelectUiStyle={(styleId) => {
+          setUiStyleId(styleId);
+          try {
+            localStorage.setItem('dt_ui_style', styleId);
+          } catch {}
+        }}
+        showKeyboard={showKeyboard}
+        onChangeShowKeyboard={(val) => {
+          setShowKeyboard(val);
+          try {
+            localStorage.setItem('dt_show_keyboard', String(val));
+          } catch {}
+        }}
+        fontSize={fontSize}
+        onChangeFontSize={(sz) => {
+          setFontSize(sz);
+          try {
+            localStorage.setItem('dt_font_size', String(sz));
+          } catch {}
+        }}
+        caretSmoothness={caretSmoothness}
+        onChangeCaretSmoothness={(val) => {
+          setCaretSmoothness(val);
+          try {
+            localStorage.setItem('dt_smoothness', val);
+          } catch {}
+        }}
+        caretShape={caretShape}
+        onChangeCaretShape={(val) => {
+          setCaretShape(val);
+          try {
+            localStorage.setItem('dt_shape', val);
+          } catch {}
+        }}
+        errorMode={errorMode}
+        onChangeErrorMode={(em) => {
+          setErrorMode(em);
+          try {
+            localStorage.setItem('dt_error_mode', em);
+          } catch {}
+        }}
+        velocityStretch={velocityStretch}
+        onChangeVelocityStretch={setVelocityStretch}
+        caretGlow={caretGlow}
+        onChangeCaretGlow={setCaretGlow}
+        focusZenDim={focusZenDim}
+        onChangeFocusZenDim={setFocusZenDim}
+        pacemakerWpm={pacemakerWpm}
+        onChangePacemaker={setPacemakerWpm}
+        soundProfile={soundProfile}
+        onChangeSoundProfile={setSoundProfile}
+      />
+
       <CommandPaletteModal
         isOpen={paletteOpen}
         initialTab={paletteTab}
@@ -581,10 +702,21 @@ export default function TypingTest() {
         soundProfile={soundProfile}
         caretSmoothness={caretSmoothness}
         ambientPlaying={ambientPlaying}
+        showKeyboard={showKeyboard}
         user={user}
         onOpenPaletteTab={(tab) => {
           setPaletteTab(tab);
           setPaletteOpen(true);
+        }}
+        onOpenSettingsPage={() => setSettingsModalOpen(true)}
+        onToggleKeyboard={() => {
+          setShowKeyboard((prev) => {
+            const next = !prev;
+            try {
+              localStorage.setItem('dt_show_keyboard', String(next));
+            } catch {}
+            return next;
+          });
         }}
         onSelectLength={(len) => {
           setLengthMode(len);
@@ -616,11 +748,11 @@ export default function TypingTest() {
         onOpenProfile={() => setProfileModalOpen(true)}
       />
 
-      <main className="relative z-10 w-full max-w-6xl mx-auto flex-1 min-h-0 flex flex-col justify-center gap-3.5 py-2">
+      <main className="relative z-10 w-full max-w-7xl mx-auto flex-1 min-h-0 flex flex-col justify-center gap-3.5 py-2">
         {isVimMode ? (
           <VimDojoArena
             theme={theme}
-            disabled={paletteOpen || profileModalOpen}
+            disabled={paletteOpen || profileModalOpen || settingsModalOpen}
             onPlayKeystroke={playKeystroke}
           />
         ) : (
@@ -645,6 +777,8 @@ export default function TypingTest() {
             hasGhostTimeline={Boolean(ghostTimeline && ghostTimeline.length > 0)}
             theme={theme}
             uiStyle={uiStyle}
+            showKeyboard={showKeyboard}
+            fontSize={fontSize}
             caretShape={caretShape}
             caretSmoothness={caretSmoothness}
             velocityStretch={velocityStretch}
@@ -656,22 +790,24 @@ export default function TypingTest() {
           />
         )}
 
-        <div
-          className={`hidden md:flex justify-center shrink-0 transition-opacity duration-300 ${
-            dimChrome ? 'opacity-35' : 'opacity-100'
-          }`}
-        >
-          <LiveKeyboardDeck
-            activeKey={lastKeyPressed}
-            mode="live"
-            accentColor={theme.accent}
-            capsLockOn={capsLockOn}
-          />
-        </div>
+        {showKeyboard && (
+          <div
+            className={`hidden md:flex justify-center shrink-0 transition-opacity duration-300 ${
+              dimChrome ? 'opacity-35' : 'opacity-100'
+            }`}
+          >
+            <LiveKeyboardDeck
+              activeKey={lastKeyPressed}
+              mode="live"
+              accentColor={theme.accent}
+              capsLockOn={capsLockOn}
+            />
+          </div>
+        )}
       </main>
 
       <footer
-        className={`relative z-10 w-full max-w-6xl mx-auto shrink-0 flex items-center justify-between text-[11px] text-neutral-500 px-1 transition-opacity duration-300 ${
+        className={`relative z-10 w-full max-w-7xl mx-auto shrink-0 flex items-center justify-between text-[11px] text-neutral-500 pl-28 pr-2 py-1 transition-opacity duration-300 ${
           dimChrome ? 'opacity-15' : 'opacity-100'
         }`}
       >
@@ -682,18 +818,23 @@ export default function TypingTest() {
           </span>
           <span>•</span>
           <button
-            onClick={() => {
-              setPaletteTab('settings');
-              setPaletteOpen(true);
-            }}
+            onClick={() => setSettingsModalOpen(true)}
             className="flex items-center gap-1 hover:text-white cursor-pointer"
           >
             <Layers className="w-3 h-3" style={{ color: theme.accent }} />
             UI: <strong className="text-neutral-300 uppercase">{uiStyle.name}</strong>
           </button>
           <span>•</span>
+          <button
+            onClick={() => setShowKeyboard((k) => !k)}
+            className="flex items-center gap-1 hover:text-white cursor-pointer"
+          >
+            <Keyboard className="w-3 h-3" style={{ color: theme.accent }} />
+            Deck: <strong className="text-neutral-300">{showKeyboard ? 'ON' : 'OFF'}</strong>
+          </button>
+          <span>•</span>
           <span>
-            Policy: <strong className="text-neutral-300 uppercase">{errorMode}</strong>
+            Font: <strong className="text-neutral-300">{fontSize}px</strong>
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -701,7 +842,7 @@ export default function TypingTest() {
             <kbd className="px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-neutral-300">
               Ctrl+,
             </kbd>{' '}
-            UI Style & Caret
+            Studio Settings
           </span>
           <span>
             <kbd className="px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-neutral-300">

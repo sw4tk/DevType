@@ -52,6 +52,7 @@ interface ResultsProps {
   sessionLogs?: HistoryRecord[];
   ghostChallengerWpm?: number | null;
   cloudSyncStatus?: 'synced' | 'local' | 'syncing';
+  syncError?: string;
   theme?: StudioTheme;
   onRestart: () => void;
   onNextRandom?: () => void;
@@ -88,6 +89,7 @@ export default function ResultsDashboard({
   sessionLogs = [],
   ghostChallengerWpm,
   cloudSyncStatus = 'local',
+  syncError,
   theme = STUDIO_THEMES[0],
   onRestart,
   onNextRandom,
@@ -123,6 +125,36 @@ export default function ResultsDashboard({
     }
     setIsSeedingDb(false);
   };
+
+    const [toast, setToast] = useState<{
+    visible: boolean;
+    type: 'loading' | 'success' | 'error';
+    msg: string;
+  }>({
+    visible: true,
+    type: 'loading',
+    msg: '🚀 Beaming your keystrokes to the cloud...',
+  });
+
+  useEffect(() => {
+    if (cloudSyncStatus === 'syncing') {
+      setToast({ visible: true, type: 'loading', msg: '🚀 Beaming your keystrokes to the cloud...' });
+    } else if (cloudSyncStatus === 'synced') {
+      setToast({
+        visible: true,
+        type: 'success',
+        msg: '🔥 Boom! Your stats are immortalized in the cloud!',
+      });
+      const t = setTimeout(() => setToast((prev) => ({ ...prev, visible: false })), 4500);
+      return () => clearTimeout(t);
+    } else if (cloudSyncStatus === 'local') {
+      setToast({
+        visible: true,
+        type: 'error',
+        msg: syncError || '💾 Saved locally (Cloud connection snoozing)',
+      });
+    }
+  }, [cloudSyncStatus, syncError]);
 
   const metrics = useMemo(() => {
     const isInvalid = Boolean(stats.isFlaggedInvalid || stats.accuracy < 45);
@@ -358,76 +390,49 @@ export default function ResultsDashboard({
       />
 
       {/* TOP STUDIO DOCK */}
-      <header className="relative z-10 w-full max-w-6xl mx-auto shrink-0">
+      <header className="relative z-10 w-full max-w-7xl mx-auto shrink-0">
         <div
-          style={{ backgroundColor: `${theme.surface}e0` }}
-          className="flex flex-wrap items-center justify-between gap-3 backdrop-blur-2xl border border-white/[0.08] px-4 py-2 rounded-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),0_15px_35px_rgba(0,0,0,0.6)]"
+          style={{ backgroundColor: `${theme.surface}e6` }}
+          className="w-full flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 backdrop-blur-2xl border border-white/[0.08] rounded-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),0_15px_35px_rgba(0,0,0,0.6)]"
         >
-          {/* Left: Brand + Build Status */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
+          {/* Left: Brand + 3D Logo + Build Status */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-2.5 group">
               <div
-                className="p-1.5 rounded-xl border border-white/15 bg-black/40"
-                style={{ color: theme.accent }}
+                className="p-1.5 rounded-xl border border-white/25 bg-black/50 terminal-logo-3d flex items-center justify-center shrink-0"
+                style={{ color: theme.accent, borderColor: `${theme.accent}66` }}
               >
                 <Terminal className="w-3.5 h-3.5" />
               </div>
-              <span className="font-extrabold tracking-tight text-white text-sm">
+              <span className="font-poppins font-extrabold tracking-tight text-white text-[15px]">
                 Dev<span style={{ color: theme.accent }}>Type</span>
               </span>
             </div>
 
             <div className="h-4 w-[1px] bg-white/10" />
 
-            {metrics.isInvalid ? (
-              <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-red-500/15 border border-red-500/40 text-xs text-red-300 font-bold">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                <span>BUILD FAILED: SYNTAX CORRUPTION (&lt;45% ACC)</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-black/45 border border-white/[0.07] text-xs">
-                <CheckCircle2 className="w-3.5 h-3.5" style={{ color: theme.accent }} />
-                <span className="text-white font-bold">BUILD SUCCEEDED</span>
-                <span className="text-neutral-500">•</span>
-                <span className="text-neutral-300">{filename}</span>
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] font-bold"
-                  style={{ color: theme.accent }}
-                >
-                  +{metrics.earnedXp} XP
-                </span>
-              </div>
-            )}
-
-            {/* Live Supabase Database Status & 1-Click Seeder Pill */}
-            {dbStats !== null && (
-              <button
-                onClick={handleSeedDatabaseNow}
-                disabled={isSeedingDb}
-                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-[10px] text-emerald-300 font-bold cursor-pointer transition-all"
-                title="Click to harvest & seed 150+ fresh GitHub snippets into your Supabase code_corpus table"
+            <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-black/45 border border-white/[0.07] text-xs">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" style={{ color: theme.accent }} />
+              <span className="text-white font-bold whitespace-nowrap">BUILD SUCCEEDED</span>
+              <span className="text-neutral-500 hidden sm:inline">•</span>
+              <span className="text-neutral-300 hidden sm:inline truncate max-w-[140px]">{filename}</span>
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] font-bold shrink-0"
+                style={{ color: theme.accent }}
               >
-                {isSeedingDb ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Database className="w-3 h-3" />
-                )}
-                <span>
-                  DB: {dbStats.sessionsCount} runs • {dbStats.corpusCount} snippets
-                  {dbStats.corpusCount === 0 ? ' (Click to Seed DB!)' : ''}
-                </span>
-              </button>
-            )}
+                +{metrics.earnedXp} XP
+              </span>
+            </div>
           </div>
 
-          {/* Right: Action Bar */}
-          <div className="flex items-center gap-2 text-xs">
+          {/* Right: Compact Grouped Action Bar */}
+          <div className="flex items-center gap-2 text-xs shrink-0 flex-wrap">
             <button
               onClick={() => onOpenModalTab?.('profile')}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/50 hover:bg-white/[0.07] border border-white/[0.08] text-neutral-300 hover:text-white transition-all cursor-pointer"
             >
               <BarChart3 className="w-3.5 h-3.5" style={{ color: theme.accent }} />
-              <span className="hidden sm:inline">Career Dossier</span>
+              <span className="hidden md:inline">Career Dossier</span>
             </button>
 
             <button
@@ -442,7 +447,7 @@ export default function ResultsDashboard({
               ) : (
                 <>
                   <Download className="w-3.5 h-3.5" style={{ color: theme.accent }} />
-                  <span className="hidden sm:inline">OG PNG</span>
+                  <span className="hidden md:inline">OG PNG</span>
                 </>
               )}
             </button>
@@ -459,7 +464,7 @@ export default function ResultsDashboard({
               ) : (
                 <>
                   <Swords className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Ghost Link</span>
+                  <span className="hidden md:inline">Ghost Link</span>
                 </>
               )}
             </button>
@@ -476,10 +481,10 @@ export default function ResultsDashboard({
               <button
                 onClick={onNextRandom}
                 style={{ backgroundColor: theme.accent }}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-neutral-950 font-extrabold transition-all cursor-pointer shadow-lg hover:opacity-90"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-neutral-950 font-extrabold transition-all cursor-pointer shadow-lg hover:opacity-90"
               >
                 <Shuffle className="w-3.5 h-3.5" />
-                <span>Next Code (Tab)</span>
+                <span>Next (Tab)</span>
               </button>
             )}
           </div>
@@ -491,7 +496,7 @@ export default function ResultsDashboard({
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="relative z-10 w-full max-w-6xl mx-auto flex-1 min-h-0 flex flex-col justify-center gap-3.5 py-2"
+        className="relative z-10 w-full max-w-7xl mx-auto flex-1 min-h-0 flex flex-col justify-center gap-3.5 py-2"
       >
         <motion.div
           variants={itemVariants}
@@ -680,8 +685,8 @@ export default function ResultsDashboard({
           {/* Center Interactive Viewport */}
           <div className="relative h-[215px] sm:h-[240px] px-5 py-3 flex flex-col justify-center">
             {activeTab === 'telemetry' && (
-              <div className="w-full h-full">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="w-full h-full min-h-[200px]">
+                <ResponsiveContainer width="100%" height="99%">
                   <AreaChart data={chartData} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="ideWpmGrad" x1="0" y1="0" x2="0" y2="1">
@@ -874,7 +879,7 @@ export default function ResultsDashboard({
         </div>
       </motion.main>
 
-      <footer className="relative z-10 w-full max-w-6xl mx-auto shrink-0 flex items-center justify-between text-[11px] text-neutral-500 px-1">
+      <footer className="relative z-10 w-full max-w-7xl mx-auto shrink-0 flex items-center justify-between text-[11px] text-neutral-500 px-1">
         <div className="flex items-center gap-2">
           <Zap className="w-3 h-3" style={{ color: theme.accent }} />
           <span>
@@ -897,6 +902,43 @@ export default function ResultsDashboard({
           </span>
         </div>
       </footer>
+    
+      {/* Live Supabase Sync Diagnostic Toast */}
+      {toast.visible && (
+        <div className="fixed bottom-12 right-6 z-50 max-w-md transition-all duration-300">
+          <div
+            className={`flex items-start gap-3 px-4 py-3 rounded-2xl border backdrop-blur-2xl shadow-2xl ${
+              toast.type === 'loading'
+                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-200'
+                : toast.type === 'success'
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                : 'bg-red-500/20 border-red-500/50 text-red-200'
+            }`}
+          >
+            {toast.type === 'loading' && <Loader2 className="w-4 h-4 animate-spin shrink-0 mt-0.5" />}
+            {toast.type === 'success' && <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+            {toast.type === 'error' && <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
+            <div className="flex-1 min-w-0 text-xs">
+              <div className="font-extrabold uppercase tracking-wider text-[10px]">
+                {toast.type === 'loading'
+                  ? 'Uplink Active...'
+                  : toast.type === 'success'
+                  ? 'Cloud Sync Secured'
+                  : 'Supabase Sync Failed (Diagnostic)'}
+              </div>
+              <div className="text-[11px] text-white/90 break-words mt-0.5 leading-snug">
+                {toast.msg}
+              </div>
+            </div>
+            <button
+              onClick={() => setToast((prev) => ({ ...prev, visible: false }))}
+              className="text-white/50 hover:text-white text-xs font-bold px-1 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

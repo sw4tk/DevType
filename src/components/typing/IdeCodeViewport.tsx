@@ -29,6 +29,8 @@ import {
   Flame,
   Trophy,
   RotateCcw,
+  GitBranch,
+  CheckCircle2,
 } from 'lucide-react';
 
 export interface SparkParticle {
@@ -61,6 +63,8 @@ interface IdeCodeViewportProps {
   hasGhostTimeline: boolean;
   theme: StudioTheme;
   uiStyle?: UIStyleSpec;
+  showKeyboard?: boolean;
+  fontSize?: number;
   caretShape: CaretShape;
   caretSmoothness: CaretSmoothness;
   velocityStretch: boolean;
@@ -92,6 +96,8 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
   hasGhostTimeline,
   theme,
   uiStyle = UI_STYLES[0],
+  showKeyboard = true,
+  fontSize = 15,
   caretShape,
   caretSmoothness,
   velocityStretch,
@@ -111,21 +117,24 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
   const sparkCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const sparksRef = useRef<SparkParticle[]>([]);
 
+  // When keyboard is hidden, gently boost effective font scale by +2px so code fills the expanded IDE naturally
+  const effectiveFontSize = showKeyboard ? fontSize : fontSize + 2;
+  const lineHeightPx = Math.round(effectiveFontSize * 1.75);
+
   const caretPhysicsRef = useRef({
     currX: 0,
     currY: 0,
     currW: 9.5,
-    currH: 26,
+    currH: lineHeightPx,
     targetX: 0,
     targetY: 0,
     targetW: 9.5,
-    targetH: 26,
+    targetH: lineHeightPx,
     velX: 0,
     velY: 0,
     initialized: false,
   });
 
-  // Expose spark emitter to parent keystroke callback
   useEffect(() => {
     sparkTriggerRef.current = () => {
       if (streak < 10) return;
@@ -152,6 +161,16 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
   const syntaxColors = useMemo(() => tokenizeSyntaxColors(code), [code]);
   const lineCount = useMemo(() => code.split('\n').length, [code]);
 
+  // Compute live cursor Line & Column for the bottom IDE status bar
+  const cursorPosition = useMemo(() => {
+    const sliced = code.slice(0, currentIndex);
+    const lines = sliced.split('\n');
+    return {
+      ln: lines.length,
+      col: (lines[lines.length - 1]?.length || 0) + 1,
+    };
+  }, [code, currentIndex]);
+
   const progressPercent =
     timeLimitSec > 0
       ? Math.min(100, Math.round(((timeLimitSec - timeLeft) / timeLimitSec) * 100))
@@ -165,8 +184,8 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
     if (status !== 'finished' && targetSpan) {
       const x = targetSpan.offsetLeft;
       const y = targetSpan.offsetTop;
-      const charW = code[currentIndex] === '\n' ? 10 : Math.max(targetSpan.offsetWidth, 9.5);
-      const charH = targetSpan.offsetHeight || 26;
+      const charW = code[currentIndex] === '\n' ? 10 : Math.max(targetSpan.offsetWidth, 8.5);
+      const charH = targetSpan.offsetHeight || lineHeightPx;
 
       const p = caretPhysicsRef.current;
       p.targetX = x;
@@ -195,9 +214,8 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
         setScrollOffsetY(targetScroll);
       }
     }
-  }, [currentIndex, status, code, caretShape]);
+  }, [currentIndex, status, code, caretShape, effectiveFontSize, lineHeightPx, showKeyboard]);
 
-  // 120Hz Sub-Pixel Caret Glide + Spark Particle Canvas Loop
   useEffect(() => {
     let rafId: number;
     let lastTime = performance.now();
@@ -245,7 +263,7 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
             ? Math.min(dx * 0.38, 14)
             : 0;
 
-        const topOffset = caretShape === 'underline' ? 23 : 0;
+        const topOffset = caretShape === 'underline' ? lineHeightPx - 3 : 0;
         el.style.transform = `translate3d(${p.currX.toFixed(2)}px, ${(p.currY + topOffset).toFixed(2)}px, 0)`;
         el.style.width = `${(p.currW + stretchExtra).toFixed(2)}px`;
         el.style.height = `${p.currH.toFixed(2)}px`;
@@ -280,7 +298,7 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
 
     rafId = requestAnimationFrame(stepPhysics);
     return () => cancelAnimationFrame(rafId);
-  }, [caretSmoothness, caretShape, velocityStretch, theme.accent]);
+  }, [caretSmoothness, caretShape, velocityStretch, theme.accent, lineHeightPx]);
 
   useLayoutEffect(() => {
     const ghostSpan = charRefs.current[ghostIndex];
@@ -290,17 +308,19 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
       const x = ghostSpan.offsetLeft;
       const y = ghostSpan.offsetTop;
       const w = Math.max(ghostSpan.offsetWidth, 9.5);
-      const h = ghostSpan.offsetHeight || 26;
+      const h = ghostSpan.offsetHeight || lineHeightPx;
       ghostEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
       ghostEl.style.width = `${w}px`;
       ghostEl.style.height = `${h}px`;
     }
-  }, [ghostIndex, status, pacemakerWpm, hasGhostTimeline]);
+  }, [ghostIndex, status, pacemakerWpm, hasGhostTimeline, lineHeightPx]);
 
   return (
     <div
       style={{ backgroundColor: `${theme.surface}e6` }}
-      className={`relative flex flex-col overflow-hidden transition-all duration-300 ${uiStyle.cardClass}`}
+      className={`relative flex flex-col justify-between overflow-hidden transition-all duration-300 ${
+        !showKeyboard ? 'flex-1 max-h-[520px]' : ''
+      } ${uiStyle.cardClass}`}
     >
       {/* Top Laser Progress Bar */}
       <div className="w-full h-[2.5px] bg-white/[0.04] shrink-0">
@@ -334,14 +354,12 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
             <span className="text-[10px] text-neutral-500">{activeSnippet.badge}</span>
           </div>
 
-          {/* Hardware Caps Lock Warning Pill */}
           {capsLockOn && (
             <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-500/20 border border-amber-400 text-amber-300 text-[10px] font-extrabold animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.4)]">
               ⇪ CAPS LOCK ON
             </span>
           )}
 
-          {/* AFK Idle Time Compensation Pill */}
           {afkPausedWarning && status === 'typing' && (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-[10px] font-bold">
               ⏸ AFK COMPENSATED
@@ -430,7 +448,9 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
       {/* Code Viewport */}
       <div
         ref={viewportRef}
-        className="relative h-[225px] sm:h-[255px] overflow-hidden px-5 py-4"
+        className={`relative overflow-hidden px-6 py-5 transition-all duration-300 ${
+          showKeyboard ? 'h-[225px] sm:h-[250px]' : 'flex-1 min-h-[320px]'
+        }`}
       >
         <div
           className="relative flex transition-transform duration-150 ease-out"
@@ -438,11 +458,14 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
         >
           <div
             ref={activeLineRef}
-            className="pointer-events-none absolute -left-5 -right-5 top-0 bg-white/[0.03] border-l-2 transition-transform duration-75 ease-out"
-            style={{ height: '26px', borderColor: theme.accent }}
+            className="pointer-events-none absolute -left-6 -right-6 top-0 bg-white/[0.03] border-l-2 transition-transform duration-75 ease-out"
+            style={{ height: `${lineHeightPx}px`, borderColor: theme.accent }}
           />
 
-          <div className="select-none pr-5 text-right text-neutral-600 text-[15px] leading-[1.7] font-mono">
+          <div
+            style={{ fontSize: `${effectiveFontSize}px`, lineHeight: `${lineHeightPx}px` }}
+            className="select-none pr-6 text-right text-neutral-600 font-mono"
+          >
             {Array.from({ length: lineCount }).map((_, idx) => (
               <div key={idx}>{idx + 1}</div>
             ))}
@@ -450,12 +473,13 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
 
           <div
             data-error-version={errorVersion}
-            className="relative flex-1 text-[15px] sm:text-base leading-[1.7] tracking-wide whitespace-pre font-mono"
+            style={{ fontSize: `${effectiveFontSize}px`, lineHeight: `${lineHeightPx}px` }}
+            className="relative flex-1 tracking-wide whitespace-pre font-mono"
           >
             <canvas
               ref={sparkCanvasRef}
               width={950}
-              height={400}
+              height={550}
               className="pointer-events-none absolute top-0 left-0 z-20"
             />
 
@@ -463,7 +487,7 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
               <div
                 ref={ghostCaretRef}
                 className="pointer-events-none absolute top-0 left-0 bg-amber-400/20 border-b-2 border-amber-400 rounded-[2px] transition-transform duration-75 ease-linear"
-                style={{ width: '9.5px', height: '26px' }}
+                style={{ width: '9.5px', height: `${lineHeightPx}px` }}
               />
             )}
 
@@ -489,25 +513,60 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
             />
 
             {code.split('').map((char, i) => {
-              let charState: CharNodeProps['state'] = 'untyped';
+              let charState: any = 'untyped';
               if (i < currentIndex) {
                 charState = errors.has(i) ? 'error' : 'correct';
               } else if (i === currentIndex) {
                 charState = errors.has(i) ? 'active-error' : 'active';
               }
 
+              if (status === "typing" && i < currentIndex - 1 && gameMode === "zen") {
+                 // Confidence Mode: Fade out text immediately after typing to prevent visual backspacing
+                 charState = "faded";
+              }
+
               return (
-                <CharNode
-                  key={i}
-                  index={i}
-                  char={char}
-                  state={charState}
-                  syntaxColor={syntaxColors[i]}
-                  setRef={setCharRef}
-                />
+                <div key={i} style={{ opacity: charState === "faded" ? 0.15 : 1, transition: "opacity 0.3s ease", display: "inline" }}>
+                  <CharNode
+                    index={i}
+                    char={char}
+                    state={charState}
+                    syntaxColor={syntaxColors[i]}
+                    setRef={setCharRef}
+                  />
+                </div>
               );
             })}
           </div>
+        </div>
+      </div>
+
+      {/* Authentic macOS / VS Code Bottom Status Bar Inside the IDE Window */}
+      <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-2 border-t border-white/[0.06] bg-black/45 text-[11px] text-neutral-400 shrink-0">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5 font-semibold" style={{ color: theme.accent }}>
+            <GitBranch className="w-3 h-3" />
+            main*
+          </span>
+          <span className="flex items-center gap-1 text-neutral-400">
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            {errors.size} errors
+          </span>
+          <span className="hidden sm:inline text-neutral-500">
+            Syntax Acc: <strong className="text-neutral-300">{stats.syntaxAccuracy ?? 100}%</strong>
+          </span>
+        </div>
+
+        <div className="flex items-center gap-4 font-mono text-[10.5px]">
+          <span>
+            Ln <strong className="text-white">{cursorPosition.ln}</strong>, Col{' '}
+            <strong className="text-white">{cursorPosition.col}</strong>
+          </span>
+          <span className="hidden md:inline">Spaces: 2</span>
+          <span className="hidden sm:inline">UTF-8</span>
+          <span className="uppercase font-bold" style={{ color: theme.accent }}>
+            {activeSnippet.label}
+          </span>
         </div>
       </div>
     </div>

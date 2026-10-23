@@ -1,19 +1,36 @@
-import { DeveloperUser, HistoryRecord, SnippetItem } from '@/constants/languages';
+import { DeveloperUser, HistoryRecord } from '@/constants/languages';
 
 const STORAGE_URL_KEY = 'dt_sb_url';
 const STORAGE_ANON_KEY = 'dt_sb_anon_key';
+
+function cleanSupabaseBaseUrl(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/\/+$/, '')
+    .replace(/\/rest\/v1.*$/i, '')
+    .replace(/\/graphql\/v1.*$/i, '');
+}
 
 export function getSupabaseCredentials(): { url: string; key: string; configured: boolean } {
   const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const envKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   if (envUrl && envKey) {
-    return { url: envUrl.replace(/\/$/, ''), key: envKey, configured: true };
+    return {
+      url: cleanSupabaseBaseUrl(envUrl),
+      key: envKey.trim().replace(/^["']|["']$/g, ''),
+      configured: true,
+    };
   }
   if (typeof window !== 'undefined') {
     const localUrl = localStorage.getItem(STORAGE_URL_KEY) || '';
     const localKey = localStorage.getItem(STORAGE_ANON_KEY) || '';
     if (localUrl && localKey) {
-      return { url: localUrl.replace(/\/$/, ''), key: localKey, configured: true };
+      return {
+        url: cleanSupabaseBaseUrl(localUrl),
+        key: localKey.trim().replace(/^["']|["']$/g, ''),
+        configured: true,
+      };
     }
   }
   return { url: '', key: '', configured: false };
@@ -21,7 +38,7 @@ export function getSupabaseCredentials(): { url: string; key: string; configured
 
 export function saveSupabaseCredentialsRuntime(url: string, key: string) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_URL_KEY, url.trim().replace(/\/$/, ''));
+  localStorage.setItem(STORAGE_URL_KEY, cleanSupabaseBaseUrl(url));
   localStorage.setItem(STORAGE_ANON_KEY, key.trim());
 }
 
@@ -39,21 +56,22 @@ export function signInWithGitHubOAuth() {
   return true;
 }
 
-// Push a completed typing session to Supabase PostgreSQL (Works for both logged-in users and guests!)
 export async function syncSessionToCloud(
   user: DeveloperUser | null,
   record: HistoryRecord
 ): Promise<{ ok: boolean; error?: string }> {
   const { url, key, configured } = getSupabaseCredentials();
-  if (!configured) return { ok: false, error: 'Supabase credentials not configured' };
+  if (!configured) {
+    return { ok: false, error: 'Missing NEXT_PUBLIC_SUPABASE_URL or ANON_KEY in .env.local' };
+  }
 
-  // Edge Case Guard: Do not pollute cloud DB with invalid or spammed runs (<45% accuracy or 0 WPM)
   if (record.wpm <= 0 || record.accuracy < 45) {
-    return { ok: false, error: 'Run below minimum integrity threshold (45% ACC)' };
+    return { ok: false, error: 'Run skipped: Accuracy below 45% integrity threshold' };
   }
 
   try {
-    const res = await fetch(`${url}/rest/v1/typing_sessions`, {
+    const endpoint = `${url}/rest/v1/typing_sessions`;
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
         apikey: key,
@@ -77,16 +95,27 @@ export async function syncSessionToCloud(
     });
 
     if (!res.ok) {
-      const errText = await res.text();
-      return { ok: false, error: `HTTP ${res.status}: ${errText.slice(0, 120)}` };
+      let detail = '';
+      try {
+        const errJson = await res.json();
+        detail = errJson.message || errJson.hint || errJson.details || JSON.stringify(errJson);
+      } catch {
+        detail = await res.text();
+      }
+      if (res.status === 404) {
+        return {
+          ok: false,
+          error: `HTTP 404 on typing_sessions: Table not exposed in public schema or PostgREST cache stale (${detail.slice(0, 80)})`,
+        };
+      }
+      return { ok: false, error: `HTTP ${res.status}: ${detail.slice(0, 110)}` };
     }
     return { ok: true };
   } catch (err: unknown) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Network error' };
+    return { ok: false, error: err instanceof Error ? err.message : 'Network connection failed' };
   }
 }
 
-// Bulk Upsert Code Snippets into Supabase `code_corpus` (Fixed with ?on_conflict=hash)
 export async function pushCorpusBatchToSupabase(
   items: {
     lang_id: string;
@@ -103,7 +132,6 @@ export async function pushCorpusBatchToSupabase(
   }
 
   try {
-    // Deduplicate hashes within the batch itself before sending to PostgREST
     const uniqueMap = new Map<string, (typeof items)[0]>();
     items.forEach((item) => uniqueMap.set(item.hash, item));
     const cleanBatch = Array.from(uniqueMap.values());
@@ -121,7 +149,7 @@ export async function pushCorpusBatchToSupabase(
 
     if (!res.ok) {
       const txt = await res.text();
-      return { ok: false, inserted: 0, error: `HTTP ${res.status}: ${txt.slice(0, 120)}` };
+      return { ok: false, inserted: 0, error: `HTTP ${res.status}: ${txt.slice(0, 100)}` };
     }
     return { ok: true, inserted: cleanBatch.length };
   } catch (err: unknown) {
@@ -133,7 +161,6 @@ export async function pushCorpusBatchToSupabase(
   }
 }
 
-// Inspect live row counts in your Supabase tables
 export async function fetchSupabaseTableStats(): Promise<{
   sessionsCount: number;
   corpusCount: number;
@@ -156,7 +183,7 @@ export async function fetchSupabaseTableStats(): Promise<{
       return {
         sessionsCount: 0,
         corpusCount: 0,
-        error: 'Tables missing — run the SQL schema in Supabase SQL Editor',
+        error: `HTTP ${sessRes.status}/${corpRes.status}: Run SQL schema & reload PostgREST cache`,
       };
     }
 
