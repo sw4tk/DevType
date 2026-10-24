@@ -343,9 +343,9 @@ export default function TypingTest() {
         ext: `.${currentLangSpec.ext}`,         // e.g. '.py'
         mode: gameMode,                         // e.g. 'sprint', '30', etc.
         length_tier: lengthMode,                // e.g. 'medium', 'beginner'
-        wpm: Math.round(wpm),                   // your calculated WPM
-        raw_wpm: Math.round(rawWpm || wpm),     // your raw WPM
-        accuracy: Number(accuracy.toFixed(1)),  // your accuracy percentage
+        wpm: Math.round(stats.wpm),                   // your calculated WPM
+        raw_wpm: Math.round(stats.rawWpm || stats.wpm),     // your raw WPM
+        accuracy: Number(stats.accuracy.toFixed(1)),  // your accuracy percentage
         lines_typed: code.split('\n').length,   // number of lines in the snippet
         duration_seconds: 30,                   // time taken or tier duration
       });                        
@@ -706,7 +706,7 @@ export default function TypingTest() {
         }}
       />
 
-      <StudioHeaderDock
+      <div className="relative z-20 w-full animate-studio-dock"><StudioHeaderDock
         theme={theme}
         uiStyle={uiStyle}
         dimChrome={dimChrome}
@@ -760,9 +760,9 @@ export default function TypingTest() {
           setSoundProfile(order[(order.indexOf(soundProfile) + 1) % order.length]);
         }}
         onOpenProfile={() => setProfileModalOpen(true)}
-      />
+      /></div>
 
-      <main className="relative z-10 w-full max-w-7xl mx-auto flex-1 min-h-0 flex flex-col justify-center gap-3.5 py-2">
+      <main className="relative z-10 w-full max-w-7xl mx-auto flex-1 min-h-0 flex flex-col justify-center gap-3.5 py-2 animate-studio-ide">
         {isVimMode ? (
           <VimDojoArena
             theme={theme}
@@ -821,7 +821,7 @@ export default function TypingTest() {
       </main>
 
       <footer
-        className={`relative z-10 w-full max-w-7xl mx-auto shrink-0 flex items-center justify-between text-[11px] text-neutral-500 pl-28 pr-2 py-1 transition-opacity duration-300 ${
+        className={`relative z-10 w-full max-w-7xl mx-auto shrink-0 flex items-center justify-between text-[11px] text-neutral-500 pl-28 pr-2 py-1 animate-studio-footer transition-opacity duration-300 ${
           dimChrome ? 'opacity-15' : 'opacity-100'
         }`}
       >
