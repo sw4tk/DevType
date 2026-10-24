@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 import TypingTest from '@/components/typing/TypingTest';
 
 export default function Home() {

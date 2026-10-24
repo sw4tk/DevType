@@ -9,7 +9,7 @@ export interface SnippetItem {
   sourceType?: 'verified' | 'synthetic' | 'coach';
 }
 
-export type SnippetLength = 'short' | 'medium' | 'long';
+export type SnippetLength = 'beginner' | 'short' | 'medium' | 'long';
 export type ErrorMode = 'forgiving' | 'strict' | 'no-backspace';
 export type GameMode =
   | 'standard'

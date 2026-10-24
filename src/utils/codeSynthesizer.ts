@@ -128,6 +128,40 @@ function buildContext(rng: () => number): DomainContext {
 // ============================================================================
 // SHORT BLUEPRINTS (3 to 5 lines — crisp, meaningful guards & helpers)
 // ============================================================================
+
+// ============================================================================
+// BEGINNER BLUEPRINTS (1 to 4 lines — extreme basics for learning)
+// ============================================================================
+function genBeginnerBlock(family: string, variant: number): string {
+  const py = [
+    'print("Hello World")',
+    'def calculate(a, b):\n    return a + b',
+    'def say_hello(name):\n    print(f"Hi {name}")',
+    'for i in range(5):\n    print(i)'
+  ];
+  const rs = [
+    'fn main() {\n    println!("Hello World");\n}',
+    'fn calculate(a: i32, b: i32) -> i32 {\n    a + b\n}',
+    'fn is_even(num: i32) -> bool {\n    num % 2 == 0\n}'
+  ];
+  const go = [
+    'func main() {\n    fmt.Println("Hello World")\n}',
+    'func calculate(a int, b int) int {\n    return a + b\n}',
+    'func isEven(n int) bool {\n    return n % 2 == 0\n}'
+  ];
+  const ts = [
+    'console.log("Hello World");',
+    'function calculate(a: number, b: number) {\n  return a + b;\n}',
+    'const name = "DevType";\nconsole.log(name);',
+    'function isEven(num: number) {\n  return num % 2 === 0;\n}'
+  ];
+  
+  if (family === 'python') return py[variant % py.length];
+  if (family === 'rust') return rs[variant % rs.length];
+  if (family === 'go') return go[variant % go.length];
+  return ts[variant % ts.length];
+}
+
 function genShortBlock(family: string, c: DomainContext, variant: number): string {
   if (family === 'python') {
     const templates = [
@@ -256,7 +290,9 @@ export function synthesizeUnlimitedSnippet(
   const v2 = Math.floor(rng() * 1000);
 
   let code = '';
-  if (lengthMode === 'short') {
+  if (lengthMode === 'beginner') {
+    code = genBeginnerBlock(spec.family, v1);
+  } else if (lengthMode === 'short') {
     code = genShortBlock(spec.family, ctx1, v1);
   } else if (lengthMode === 'medium') {
     code = genMediumBlock(spec.family, ctx1, v1);
@@ -274,7 +310,7 @@ export function synthesizeUnlimitedSnippet(
     badge: `${lengthMode.toUpperCase()} (${lineCount}L) • ${spec.badge}`,
     category: spec.category,
     code,
-    difficulty: lengthMode === 'long' ? 'hard' : lengthMode === 'medium' ? 'medium' : 'easy',
+    difficulty: lengthMode === 'beginner' ? 'beginner' : lengthMode === 'long' ? 'hard' : lengthMode === 'medium' ? 'medium' : 'easy',
     sourceType: 'synthetic',
   };
 }

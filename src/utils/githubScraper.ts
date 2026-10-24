@@ -83,6 +83,7 @@ export function isSnippetUnseen(code: string): boolean {
 
 function matchesLengthBucket(code: string, lengthMode: SnippetLength): boolean {
   const lines = code.split('\n').length;
+  if (lengthMode === 'beginner') return lines >= 1 && lines <= 5;
   if (lengthMode === 'short') return lines >= 2 && lines <= 6;
   if (lengthMode === 'medium') return lines >= 7 && lines <= 15;
   return lines >= 16;
@@ -201,12 +202,12 @@ export async function getNextCorpusSnippet(
   // Mix in unseen Supabase cloud snippets that strictly match the requested lengthMode (S / M / L)
   if (configured && Math.random() < 0.35) {
     try {
-      const minL = lengthMode === 'short' ? 2 : lengthMode === 'medium' ? 7 : 16;
-      const maxL = lengthMode === 'short' ? 6 : lengthMode === 'medium' ? 15 : 60;
+      const minL = lengthMode === 'beginner' ? 1 : lengthMode === 'short' ? 2 : lengthMode === 'medium' ? 7 : 16;
+      const maxL = lengthMode === 'beginner' ? 5 : lengthMode === 'short' ? 6 : lengthMode === 'medium' ? 15 : 60;
       const res = await fetch(
         `${url}/rest/v1/code_corpus?lang_id=eq.${langId}&line_count=gte.${minL}&line_count=lte.${maxL}&limit=40`,
         {
-          headers: { apikey: key, Authorization: `Bearer ${key}` },
+          headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: 'no-store',
         }
       );
       if (res.ok) {
