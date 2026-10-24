@@ -1,7 +1,5 @@
-
-
 <div align="center">
-  <img src="[https://api.iconify.design/lucide:terminal.svg?color=%2310b981&width=64&height=64](https://api.iconify.design/lucide:terminal.svg?color=%2310b981&width=64&height=64)" alt="DevType Logo" />
+  <img src="https://api.iconify.design/lucide/terminal.svg?color=%2310b981&width=64&height=64" alt="DevType Logo" />
   <h1>DevType — Developer Typing Studio</h1>
   <p><strong>A production-grade, highly polished developer typing studio built with Next.js, TypeScript, Tailwind CSS, and Supabase.</strong></p>
 
@@ -13,11 +11,13 @@
     <a href="#-license">License</a>
   </p>
 
-  <img src="[https://img.shields.io/badge/Next.js_16-App_Router-black?style=flat-square&logo=next.js](https://img.shields.io/badge/Next.js_16-App_Router-black?style=flat-square&logo=next.js)" alt="Next.js" />
-  <img src="[https://img.shields.io/badge/TypeScript-Strict-blue?style=flat-square&logo=typescript](https://img.shields.io/badge/TypeScript-Strict-blue?style=flat-square&logo=typescript)" alt="TypeScript" />
-  <img src="[https://img.shields.io/badge/Tailwind_CSS-Design-38bdf8?style=flat-square&logo=tailwindcss](https://img.shields.io/badge/Tailwind_CSS-Design-38bdf8?style=flat-square&logo=tailwindcss)" alt="Tailwind CSS" />
-  <img src="[https://img.shields.io/badge/Supabase-Cloud_Telemetry-3ecf8e?style=flat-square&logo=supabase](https://img.shields.io/badge/Supabase-Cloud_Telemetry-3ecf8e?style=flat-square&logo=supabase)" alt="Supabase" />
-  <img src="[https://img.shields.io/badge/License-MIT-green?style=flat-square](https://img.shields.io/badge/License-MIT-green?style=flat-square)" alt="MIT License" />
+  <p>
+    <img src="https://img.shields.io/badge/Next.js_16-App_Router-black?style=flat-square&logo=next.js" alt="Next.js" />
+    <img src="https://img.shields.io/badge/TypeScript-Strict-blue?style=flat-square&logo=typescript" alt="TypeScript" />
+    <img src="https://img.shields.io/badge/Tailwind_CSS-Design-38bdf8?style=flat-square&logo=tailwindcss" alt="Tailwind CSS" />
+    <img src="https://img.shields.io/badge/Supabase-Cloud_Telemetry-3ecf8e?style=flat-square&logo=supabase" alt="Supabase" />
+    <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="MIT License" />
+  </p>
 </div>
 
 ---
@@ -50,7 +50,7 @@ Follow these instructions to set up the repository locally on your machine.
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/devtype.git
+git clone [https://github.com/your-username/devtype.git](https://github.com/your-username/devtype.git)
 cd devtype
 
 ```
@@ -74,7 +74,7 @@ cp .env.example .env.local
 Open `.env.local` and paste your live Supabase credentials:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=[https://your-project-id.supabase.co](https://your-project-id.supabase.co)
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key-here
 
 ```
