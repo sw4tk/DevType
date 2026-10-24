@@ -10,6 +10,7 @@ import IdeCodeViewport from '@/components/typing/IdeCodeViewport';
 import CommandPaletteModal, { ModalTab } from '@/components/typing/CommandPaletteModal';
 import DeveloperProfileModal from '@/components/typing/DeveloperProfileModal';
 import StudioSettingsModal from '@/components/typing/StudioSettingsModal';
+import { recordTypingSession } from '@/utils/telemetry';
 import {
   LANGUAGES,
   QUICK_LANGUAGES,
@@ -99,6 +100,7 @@ export default function TypingTest() {
 
   // Boot Loader Sequence: Downloads User Data + Fetches Guaranteed-Random Unseen Snippet
   useEffect(() => {
+    
     const initializeDevType = async () => {
       const currentIsoDate = new Date().toISOString().slice(0, 10);
       setTodayStr(currentIsoDate);
@@ -335,6 +337,18 @@ export default function TypingTest() {
 
   useEffect(() => {
     if (status === 'finished') {
+      // Call this right when the test finishes successfully:
+      recordTypingSession({
+        language: currentLangSpec.name,         // e.g. 'Python'
+        ext: `.${currentLangSpec.ext}`,         // e.g. '.py'
+        mode: gameMode,                         // e.g. 'sprint', '30', etc.
+        length_tier: lengthMode,                // e.g. 'medium', 'beginner'
+        wpm: Math.round(wpm),                   // your calculated WPM
+        raw_wpm: Math.round(rawWpm || wpm),     // your raw WPM
+        accuracy: Number(accuracy.toFixed(1)),  // your accuracy percentage
+        lines_typed: code.split('\n').length,   // number of lines in the snippet
+        duration_seconds: 30,                   // time taken or tier duration
+      });                        
       if (!stats.isFlaggedInvalid && stats.wpm > personalBest) {
         setPersonalBest(stats.wpm);
         try {

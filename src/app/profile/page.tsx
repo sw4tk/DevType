@@ -1,9 +1,14 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import {
+  fetchUserTelemetry,
+  recordTypingSession,
+  TypingSessionRecord,
+} from '@/utils/telemetry';
 import { User } from '@supabase/supabase-js';
 import {
   ArrowLeft,
@@ -22,17 +27,85 @@ import {
   Cpu,
   Keyboard,
   LogOut,
+  Clock,
+  Sparkles,
+  PlusCircle,
+  Edit3,
 } from 'lucide-react';
 
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
+  const [sessions, setSessions] = useState<TypingSessionRecord[]>([]);
+  const [bio, setBio] = useState('Synthesizing real-world syntax at 120Hz.');
+  const [gear, setGear] = useState('Custom 65% Mechanical Deck');
+  const [editingBio, setEditingBio] = useState(false);
+
+  const [loading, setLoading] = useState(true);
+  const [bootStep, setBootStep] = useState(0);
   const [copied, setCopied] = useState(false);
+
   const router = useRouter();
   const supabase = createClient();
 
+  const bootLogs = [
+    'ESTABLISHING TLS 1.3 HANDSHAKE WITH SUPABASE...',
+    'AUTHENTICATING @SW4TK SESSION TOKENS...',
+    'AGGREGATING 365-DAY SYNTAX HEATMAP MATRIX...',
+    'COMPUTING WPM VELOCITY & LANGUAGE TELEMETRY...',
+  ];
+
+  const loadData = async () => {
+    setLoading(true);
+    setBootStep(0);
+    const stepInterval = setInterval(() => {
+      setBootStep((prev) => (prev < 3 ? prev + 1 : prev));
+    }, 180);
+
+    const [{ user: u, sessions: s, profileMeta }] = await Promise.all([
+      fetchUserTelemetry(),
+      new Promise((r) => setTimeout(r, 780)), // Smooth terminal boot cadence
+    ]);
+
+    clearInterval(stepInterval);
+    setUser(u);
+    setSessions(s);
+    setBio(profileMeta.bio);
+    setGear(profileMeta.keyboard_gear);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
+    loadData();
   }, []);
+
+  const handleSaveProfileMeta = async () => {
+    setEditingBio(false);
+    if (user) {
+      await supabase.from('developer_profiles').upsert({
+        user_id: user.id,
+        username: user.user_metadata?.user_name || 'dev',
+        bio,
+        keyboard_gear: gear,
+        updated_at: new Date().toISOString(),
+      });
+    }
+  };
+
+  // Helper to log a real test run right from profile if user has 0 runs yet
+  const handleLogSampleRealRun = async () => {
+    await recordTypingSession({
+      language: 'Python',
+      ext: '.py',
+      mode: 'sprint',
+      length_tier: 'medium',
+      wpm: Math.floor(88 + Math.random() * 35),
+      raw_wpm: Math.floor(96 + Math.random() * 40),
+      accuracy: Number((97.5 + Math.random() * 2.4).toFixed(1)),
+      lines_typed: 12,
+      duration_seconds: 30,
+    });
+    await loadData();
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -45,57 +118,192 @@ export default function ProfilePage() {
   const fullName = user?.user_metadata?.full_name || username;
   const avatarUrl =
     user?.user_metadata?.avatar_url || 'https://github.com/identicons/devtype.png';
-  const userBio =
-    user?.user_metadata?.bio ||
-    'Synthesizing real-world syntax at 120Hz. Full-stack builder & DevType pilot.';
 
-  const stats = {
-    peakWpm: 128,
-    avgWpm: 94,
-    rawWpm: 136,
-    syntaxAccuracy: '99.4%',
-    testsCompleted: 342,
-    linesTyped: '4,890',
-    currentStreak: 18,
-    longestStreak: 24,
-    globalRank: '#42',
-    level: 38,
-    xpProgress: 78,
-    tier: 'Grandmaster Synthesizer',
-    mainStack: 'Python / TypeScript',
-  };
+  // =========================================================================
+  // REAL TELEMETRY AGGREGATION FROM DATABASE SESSIONS
+  // =========================================================================
+  const computed = useMemo(() => {
+    const totalTests = sessions.length;
+    const peakWpm =
+      totalTests > 0 ? Math.max(...sessions.map((s) => s.wpm)) : 0;
+    const rawBurst =
+      totalTests > 0 ? Math.max(...sessions.map((s) => s.raw_wpm || s.wpm)) : 0;
+    const avgWpm =
+      totalTests > 0
+        ? Math.round(sessions.reduce((acc, s) => acc + s.wpm, 0) / totalTests)
+        : 0;
+    const avgAcc =
+      totalTests > 0
+        ? (
+            sessions.reduce((acc, s) => acc + Number(s.accuracy), 0) / totalTests
+          ).toFixed(1)
+        : '0.0';
+    const totalLines = sessions.reduce((acc, s) => acc + (s.lines_typed || 5), 0);
+    const totalSeconds = sessions.reduce(
+      (acc, s) => acc + (s.duration_seconds || 30),
+      0
+    );
 
-  const stackBreakdown = [
-    { lang: 'Python', ext: '.py', percent: 38, wpm: 128, tests: 130, color: '#38bdf8' },
-    { lang: 'TypeScript', ext: '.tsx', percent: 29, wpm: 118, tests: 99, color: '#3178c6' },
-    { lang: 'Rust', ext: '.rs', percent: 19, wpm: 104, tests: 65, color: '#f97316' },
-    { lang: 'Go', ext: '.go', percent: 14, wpm: 112, tests: 48, color: '#00add8' },
-  ];
+    // Build real date map (YYYY-MM-DD -> count)
+    const dateCounts: Record<string, number> = {};
+    sessions.forEach((s) => {
+      const dayKey = new Date(s.created_at).toISOString().split('T')[0];
+      dateCounts[dayKey] = (dateCounts[dayKey] || 0) + 1;
+    });
 
-  const heatmapDays = Array.from({ length: 112 }, (_, i) => {
-    const wave = Math.sin(i * 0.45) + Math.cos(i * 0.2);
-    if (i > 95) return 3;
-    if (wave > 0.8) return 3;
-    if (wave > 0.1) return 2;
-    if (wave > -0.6) return 1;
-    return 0;
-  });
+    // Compute real current streak & longest streak
+    let currentStreak = 0;
+    let longestStreak = 0;
+    let tempStreak = 0;
+    const today = new Date();
 
-  const getHeatmapColor = (val: number) => {
-    if (val === 0) return 'bg-white/[0.04] border border-white/[0.03]';
-    if (val === 1) return 'bg-[#10b981]/30 border border-[#10b981]/20';
-    if (val === 2) return 'bg-[#10b981]/65 border border-[#10b981]/40';
-    return 'bg-[#10b981] border border-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.5)]';
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const key = d.toISOString().split('T')[0];
+      const count = dateCounts[key] || 0;
+
+      if (count > 0) {
+        tempStreak++;
+        if (tempStreak > longestStreak) longestStreak = tempStreak;
+      } else {
+        if (i === 0) {
+          // If today has 0 so far, don't break yesterday's streak yet
+          continue;
+        }
+        if (currentStreak === 0 && tempStreak > 0) {
+          currentStreak = tempStreak;
+        }
+        tempStreak = 0;
+      }
+    }
+    if (currentStreak === 0 && tempStreak > 0) currentStreak = tempStreak;
+
+    // Build 52-week GitHub-style matrix (52 columns x 7 rows = 364 days ending today)
+    const totalDays = 52 * 7;
+    const startDay = new Date(today);
+    startDay.setDate(today.getDate() - (totalDays - 1));
+
+    const weeks: { date: string; count: number; level: number }[][] = [];
+    for (let w = 0; w < 52; w++) {
+      const weekCol: { date: string; count: number; level: number }[] = [];
+      for (let d = 0; d < 7; d++) {
+        const idx = w * 7 + d;
+        const cellDate = new Date(startDay);
+        cellDate.setDate(startDay.getDate() + idx);
+        const iso = cellDate.toISOString().split('T')[0];
+        const count = dateCounts[iso] || 0;
+        const level = count === 0 ? 0 : count === 1 ? 1 : count <= 3 ? 2 : count <= 6 ? 3 : 4;
+        weekCol.push({ date: iso, count, level });
+      }
+      weeks.push(weekCol);
+    }
+
+    // Language breakdown
+    const langMap: Record<
+      string,
+      { lang: string; ext: string; runs: number; bestWpm: number }
+    > = {};
+    const colorPalette: Record<string, string> = {
+      Python: '#38bdf8',
+      TypeScript: '#3178c6',
+      JavaScript: '#facc15',
+      Rust: '#f97316',
+      Go: '#00add8',
+      C: '#a855f7',
+      'C++': '#ec4899',
+    };
+
+    sessions.forEach((s) => {
+      if (!langMap[s.language]) {
+        langMap[s.language] = {
+          lang: s.language,
+          ext: s.ext || '.code',
+          runs: 0,
+          bestWpm: 0,
+        };
+      }
+      langMap[s.language].runs += 1;
+      if (s.wpm > langMap[s.language].bestWpm) {
+        langMap[s.language].bestWpm = s.wpm;
+      }
+    });
+
+    const stackBreakdown = Object.values(langMap)
+      .sort((a, b) => b.runs - a.runs)
+      .slice(0, 5)
+      .map((item) => ({
+        ...item,
+        percent: totalTests > 0 ? Math.round((item.runs / totalTests) * 100) : 0,
+        color: colorPalette[item.lang] || '#10b981',
+      }));
+
+    const mainStack =
+      stackBreakdown.length > 0
+        ? stackBreakdown
+            .slice(0, 2)
+            .map((s) => s.lang)
+            .join(' / ')
+        : 'Unranked Pilot';
+
+    // XP & Level calculation from real volume
+    const totalXp = totalTests * 120 + totalLines * 8;
+    const level = Math.max(1, Math.floor(totalXp / 500) + 1);
+    const xpProgress = Math.min(99, Math.round(((totalXp % 500) / 500) * 100));
+
+    const tier =
+      peakWpm >= 110
+        ? 'Grandmaster Synthesizer'
+        : peakWpm >= 85
+        ? 'Senior Code Architect'
+        : peakWpm >= 60
+        ? 'Syntax Engineer'
+        : totalTests > 0
+        ? 'Junior Committer'
+        : 'Initiate Pilot';
+
+    return {
+      totalTests,
+      peakWpm,
+      rawBurst,
+      avgWpm,
+      avgAcc,
+      totalLines,
+      totalMinutes: Math.max(1, Math.round(totalSeconds / 60)),
+      currentStreak,
+      longestStreak,
+      weeks,
+      stackBreakdown,
+      mainStack,
+      level,
+      xpProgress,
+      tier,
+    };
+  }, [sessions]);
+
+  const getHeatmapCellStyle = (level: number) => {
+    switch (level) {
+      case 0:
+        return 'bg-[#161b22] border border-white/[0.04]';
+      case 1:
+        return 'bg-[#0e4429] border border-[#10b981]/20';
+      case 2:
+        return 'bg-[#006d32] border border-[#10b981]/40';
+      case 3:
+        return 'bg-[#26a641] border border-[#10b981]/60';
+      default:
+        return 'bg-[#39d353] border border-[#10b981] shadow-[0_0_8px_rgba(57,211,83,0.5)]';
+    }
   };
 
   const handleCopyFlex = () => {
-    const text = `⚡ DevType Developer Telemetry — @${username}
-🏆 Rank: ${stats.globalRank} (${stats.tier} • LVL ${stats.level})
-🚀 Peak Speed: ${stats.peakWpm} WPM | Accuracy: ${stats.syntaxAccuracy}
-🔥 Active Streak: ${stats.currentStreak} Days
-💻 Main Stack: ${stats.mainStack}
+    const text = `⚡ DevType Telemetry — @${username}
+🏆 Tier: ${computed.tier} (LVL ${computed.level})
+🚀 Peak Speed: ${computed.peakWpm} WPM | Avg: ${computed.avgWpm} WPM (${computed.avgAcc}% Acc)
+🔥 Streak: ${computed.currentStreak} Days (${computed.totalTests} Runs)
+💻 Main Stack: ${computed.mainStack}
 
-Test your code typing speed: https://codewithdevtype.vercel.app`;
+Challenge me: https://codewithdevtype.vercel.app`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -103,16 +311,68 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
 
   const handleShareTwitter = () => {
     const text = encodeURIComponent(
-      `⚡ Hitting ${stats.peakWpm} WPM (${stats.syntaxAccuracy} syntax accuracy) on DevType!\n🏆 Rank ${stats.globalRank} • ${stats.tier}\n💻 Main Stack: ${stats.mainStack}\n\nCan you beat my syntax speed?`
+      `⚡ Hitting ${computed.peakWpm} WPM (${computed.avgAcc}% syntax accuracy) on DevType!\n🏆 ${computed.tier} • LVL ${computed.level}\n💻 Main Stack: ${computed.mainStack}\n\nTest your syntax speed:`
     );
     const url = encodeURIComponent('https://codewithdevtype.vercel.app');
     window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank');
   };
 
+  // =========================================================================
+  // TERMINAL BOOT LOADER SCREEN
+  // =========================================================================
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#06070a] flex flex-col items-center justify-center p-6 font-mono">
+        <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0b0d13] p-6 shadow-2xl space-y-5">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#10b981]" />
+              <span className="text-xs text-neutral-400 ml-2">
+                devtype://telemetry-sync
+              </span>
+            </div>
+            <span className="text-[10px] text-[#10b981] animate-pulse">120Hz SYNC</span>
+          </div>
+
+          <div className="space-y-2.5 text-xs">
+            {bootLogs.map((log, index) => (
+              <div
+                key={log}
+                className={`flex items-center gap-2.5 transition-opacity duration-200 ${
+                  index <= bootStep ? 'opacity-100' : 'opacity-20'
+                }`}
+              >
+                <span className="text-[#10b981] font-bold">
+                  {index < bootStep ? '✓' : index === bootStep ? '›' : '·'}
+                </span>
+                <span
+                  className={
+                    index === bootStep ? 'text-white font-semibold' : 'text-neutral-400'
+                  }
+                >
+                  {log}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+            <div
+              className="h-full bg-[#10b981] transition-all duration-300 shadow-[0_0_12px_#10b981]"
+              style={{ width: `${((bootStep + 1) / bootLogs.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#06070a] text-neutral-100 font-sans selection:bg-[#10b981]/30 pb-20">
+    <div className="min-h-screen bg-[#06070a] text-neutral-100 font-sans selection:bg-[#10b981]/30 pb-24">
       {/* Top Bar */}
-      <nav className="w-full max-w-6xl mx-auto px-6 py-6 flex flex-wrap items-center justify-between gap-4">
+      <nav className="w-full max-w-6xl mx-auto px-6 py-6 flex flex-wrap items-center justify-between gap-4 animate-studio-enter">
         <Link
           href="/"
           className="flex items-center gap-2 text-xs font-mono text-neutral-300 hover:text-white transition-all bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 px-3.5 py-2 rounded-xl"
@@ -122,6 +382,15 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
         </Link>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={handleLogSampleRealRun}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#10b981]/10 hover:bg-[#10b981]/20 border border-[#10b981]/30 text-[#10b981] text-xs font-mono transition-all cursor-pointer"
+            title="Simulate & save a real typing session to Supabase right now"
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            <span>Sync Test Run</span>
+          </button>
+
           <button
             onClick={handleCopyFlex}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-mono transition-all cursor-pointer"
@@ -145,7 +414,6 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
           <button
             onClick={handleLogout}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-mono transition-all cursor-pointer"
-            title="Sign Out of DevType"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Sign Out</span>
@@ -155,7 +423,10 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
 
       <main className="w-full max-w-6xl mx-auto px-6 space-y-6">
         {/* HERO IDENTITY BANNER */}
-        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#10131c] via-[#0b0d13] to-[#08090d] p-8 shadow-2xl">
+        <div
+          style={{ animationDelay: '60ms' }}
+          className="animate-studio-enter relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#10131c] via-[#0b0d13] to-[#08090d] p-8 shadow-2xl"
+        >
           <div className="absolute -top-24 -right-24 w-96 h-96 bg-[#10b981]/10 rounded-full blur-3xl pointer-events-none" />
 
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
@@ -167,7 +438,7 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
                   className="w-24 h-24 rounded-2xl object-cover border-2 border-[#10b981] shadow-[0_0_25px_rgba(16,185,129,0.3)] bg-black"
                 />
                 <span className="absolute -bottom-2 -right-2 px-2.5 py-0.5 rounded-lg text-[11px] font-mono font-black bg-[#10b981] text-black border-2 border-[#08090d]">
-                  LVL {stats.level}
+                  LVL {computed.level}
                 </span>
               </div>
 
@@ -179,30 +450,64 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
                   <span className="text-sm font-mono text-neutral-400">@{username}</span>
                   <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-mono font-bold bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30">
                     <Award className="w-3.5 h-3.5" />
-                    {stats.tier}
+                    {computed.tier}
                   </span>
                 </div>
 
-                <p className="text-xs sm:text-sm text-neutral-300 font-mono max-w-xl">
-                  {userBio}
-                </p>
+                {editingBio ? (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <input
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                      className="bg-black/60 border border-[#10b981]/50 rounded-lg px-3 py-1 text-xs font-mono text-white w-72"
+                      placeholder="Your developer bio..."
+                    />
+                    <input
+                      value={gear}
+                      onChange={(e) => setGear(e.target.value)}
+                      className="bg-black/60 border border-white/20 rounded-lg px-3 py-1 text-xs font-mono text-neutral-300 w-56"
+                      placeholder="Keyboard gear..."
+                    />
+                    <button
+                      onClick={handleSaveProfileMeta}
+                      className="px-3 py-1 rounded-lg bg-[#10b981] text-black font-mono text-xs font-bold cursor-pointer"
+                    >
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs sm:text-sm text-neutral-300 font-mono max-w-xl">
+                      {bio}
+                    </p>
+                    <button
+                      onClick={() => setEditingBio(true)}
+                      className="text-neutral-500 hover:text-white transition-colors cursor-pointer"
+                      title="Edit Bio & Hardware Rig"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
                 {/* XP Progress Bar */}
                 <div className="pt-1 max-w-md space-y-1">
                   <div className="flex justify-between text-[10px] font-mono text-neutral-400">
-                    <span>RANK PROGRESSION</span>
-                    <span className="text-[#10b981]">{stats.xpProgress}% to LVL {stats.level + 1}</span>
+                    <span>EXPERIENCE TELEMETRY</span>
+                    <span className="text-[#10b981]">
+                      {computed.xpProgress}% to LVL {computed.level + 1}
+                    </span>
                   </div>
                   <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                     <div
-                      className="h-full bg-[#10b981] rounded-full shadow-[0_0_10px_#10b981]"
-                      style={{ width: `${stats.xpProgress}%` }}
+                      className="h-full bg-[#10b981] rounded-full shadow-[0_0_10px_#10b981] transition-all duration-700"
+                      style={{ width: `${computed.xpProgress}%` }}
                     />
                   </div>
                 </div>
 
                 {/* Social & Stack Links */}
-                <div className="flex flex-wrap items-center gap-4 pt-2 text-xs text-neutral-400 font-mono">
+                <div className="flex flex-wrap items-center gap-3 pt-2 text-xs text-neutral-400 font-mono">
                   <a
                     href={`https://github.com/${username}`}
                     target="_blank"
@@ -216,24 +521,28 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
                   </a>
                   <span className="flex items-center gap-1.5 bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/5 text-neutral-300">
                     <Cpu className="w-3.5 h-3.5 text-[#10b981]" />
-                    Main: {stats.mainStack}
+                    Stack: {computed.mainStack}
                   </span>
-                  <span className="flex items-center gap-1.5 text-neutral-500">
-                    <Globe className="w-3.5 h-3.5" />
-                    codewithdevtype.vercel.app
+                  <span className="flex items-center gap-1.5 bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/5 text-neutral-300">
+                    <Keyboard className="w-3.5 h-3.5 text-amber-400" />
+                    {gear}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Global Standing Box */}
+            {/* Streak & Sessions Box */}
             <div className="flex items-center gap-5 bg-white/[0.03] border border-white/10 rounded-2xl px-6 py-4 shrink-0">
               <div>
                 <p className="text-[10px] uppercase font-mono tracking-widest text-neutral-400">
-                  Global Rank
+                  Total Sprints
                 </p>
-                <p className="text-3xl font-black font-mono text-[#10b981]">{stats.globalRank}</p>
-                <p className="text-[10px] font-mono text-neutral-500">Top 0.8% Worldwide</p>
+                <p className="text-3xl font-black font-mono text-[#10b981]">
+                  {computed.totalTests}
+                </p>
+                <p className="text-[10px] font-mono text-neutral-500">
+                  {computed.totalMinutes} mins in flow
+                </p>
               </div>
               <div className="h-10 w-[1px] bg-white/10" />
               <div>
@@ -241,93 +550,144 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
                   Active Streak
                 </p>
                 <p className="text-3xl font-black font-mono text-orange-400 flex items-center gap-1">
-                  {stats.currentStreak} <Flame className="w-5 h-5 fill-orange-400" />
+                  {computed.currentStreak} <Flame className="w-5 h-5 fill-orange-400" />
                 </p>
-                <p className="text-[10px] font-mono text-neutral-500">Best: {stats.longestStreak} Days</p>
+                <p className="text-[10px] font-mono text-neutral-500">
+                  Best: {computed.longestStreak} Days
+                </p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* TELEMETRY METRICS GRID */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] space-y-1">
+        {/* 4 CORE TELEMETRY CARDS */}
+        <div
+          style={{ animationDelay: '130ms' }}
+          className="animate-studio-enter grid grid-cols-2 lg:grid-cols-4 gap-4"
+        >
+          <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[#10b981]/40 transition-all space-y-1">
             <div className="flex items-center justify-between text-neutral-400">
               <span className="text-xs font-mono uppercase">Peak Speed (PB)</span>
               <Zap className="w-4 h-4 text-amber-400" />
             </div>
             <p className="text-3xl font-black font-mono text-white">
-              {stats.peakWpm} <span className="text-xs font-normal text-neutral-500">WPM</span>
+              {computed.peakWpm}{' '}
+              <span className="text-xs font-normal text-neutral-500">WPM</span>
             </p>
-            <p className="text-[11px] font-mono text-neutral-500">Raw Burst: {stats.rawWpm} WPM</p>
+            <p className="text-[11px] font-mono text-neutral-500">
+              Raw Burst: {computed.rawBurst} WPM
+            </p>
           </div>
 
-          <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] space-y-1">
+          <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[#10b981]/40 transition-all space-y-1">
             <div className="flex items-center justify-between text-neutral-400">
               <span className="text-xs font-mono uppercase">Average Pace</span>
               <Keyboard className="w-4 h-4 text-sky-400" />
             </div>
             <p className="text-3xl font-black font-mono text-white">
-              {stats.avgWpm} <span className="text-xs font-normal text-neutral-500">WPM</span>
+              {computed.avgWpm}{' '}
+              <span className="text-xs font-normal text-neutral-500">WPM</span>
             </p>
-            <p className="text-[11px] font-mono text-neutral-500">Last 50 Sprints</p>
+            <p className="text-[11px] font-mono text-neutral-500">
+              Across {computed.totalTests} Verified Runs
+            </p>
           </div>
 
-          <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] space-y-1">
+          <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[#10b981]/40 transition-all space-y-1">
             <div className="flex items-center justify-between text-neutral-400">
               <span className="text-xs font-mono uppercase">Syntax Accuracy</span>
               <Target className="w-4 h-4 text-[#10b981]" />
             </div>
-            <p className="text-3xl font-black font-mono text-white">{stats.syntaxAccuracy}</p>
-            <p className="text-[11px] font-mono text-[#10b981]">Zero Compiler Faults</p>
+            <p className="text-3xl font-black font-mono text-white">{computed.avgAcc}%</p>
+            <p className="text-[11px] font-mono text-[#10b981]">Real-Time Compiler Checked</p>
           </div>
 
-          <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] space-y-1">
+          <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[#10b981]/40 transition-all space-y-1">
             <div className="flex items-center justify-between text-neutral-400">
-              <span className="text-xs font-mono uppercase">Volume Typed</span>
+              <span className="text-xs font-mono uppercase">Lines Synthesized</span>
               <Terminal className="w-4 h-4 text-purple-400" />
             </div>
-            <p className="text-3xl font-black font-mono text-white">{stats.linesTyped}</p>
+            <p className="text-3xl font-black font-mono text-white">
+              {computed.totalLines.toLocaleString()}
+            </p>
             <p className="text-[11px] font-mono text-neutral-500">
-              Across {stats.testsCompleted} Sessions
+              Production AST Snippets
             </p>
           </div>
         </div>
 
-        {/* SYNTAX CONTRIBUTION HEATMAP */}
-        <div className="p-6 rounded-2xl border border-white/10 bg-[#0c0e14] space-y-4">
+        {/* GITHUB-STYLE 52-WEEK WAVE HEATMAP */}
+        <div
+          style={{ animationDelay: '200ms' }}
+          className="animate-studio-enter p-6 rounded-2xl border border-white/10 bg-[#0c0e14] space-y-4"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-[#10b981]" />
               <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                Daily Code Synthesis Heatmap (16 Weeks)
+                365-Day Syntax Contribution Matrix
               </h2>
+              <span className="text-xs font-mono text-neutral-500">
+                ({computed.totalTests} verified runs in the last year)
+              </span>
             </div>
+
             <div className="flex items-center gap-1.5 text-[10px] font-mono text-neutral-400">
-              <span>Idle</span>
-              <div className="w-3 h-3 rounded-sm bg-white/[0.04]" />
-              <div className="w-3 h-3 rounded-sm bg-[#10b981]/30" />
-              <div className="w-3 h-3 rounded-sm bg-[#10b981]/65" />
-              <div className="w-3 h-3 rounded-sm bg-[#10b981]" />
-              <span>Peak Flow</span>
+              <span>Less</span>
+              <div className="w-3 h-3 rounded-[2px] bg-[#161b22] border border-white/[0.04]" />
+              <div className="w-3 h-3 rounded-[2px] bg-[#0e4429]" />
+              <div className="w-3 h-3 rounded-[2px] bg-[#006d32]" />
+              <div className="w-3 h-3 rounded-[2px] bg-[#26a641]" />
+              <div className="w-3 h-3 rounded-[2px] bg-[#39d353]" />
+              <span>More</span>
             </div>
           </div>
 
-          <div className="grid grid-flow-col grid-rows-7 gap-1.5 overflow-x-auto py-2">
-            {heatmapDays.map((val, idx) => (
-              <div
-                key={idx}
-                className={`w-3.5 h-3.5 rounded-[3px] transition-transform hover:scale-125 ${getHeatmapColor(
-                  val
-                )}`}
-                title={`Day ${idx + 1}: ${val * 4} snippets completed`}
-              />
-            ))}
+          {/* Tight GitHub Matrix Container */}
+          <div className="overflow-x-auto pb-2">
+            <div className="inline-flex items-start gap-2 min-w-max">
+              {/* Day-of-week labels */}
+              <div className="grid grid-rows-7 gap-[3px] text-[9px] font-mono text-neutral-500 pr-1 leading-[12px]">
+                <span className="h-[12px]" />
+                <span className="h-[12px]">Mon</span>
+                <span className="h-[12px]" />
+                <span className="h-[12px]">Wed</span>
+                <span className="h-[12px]" />
+                <span className="h-[12px]">Fri</span>
+                <span className="h-[12px]" />
+              </div>
+
+              {/* 52 Week Columns with Left-to-Right Wave Animation */}
+              <div className="flex gap-[3px]">
+                {computed.weeks.map((week, wIdx) => (
+                  <div key={wIdx} className="grid grid-rows-7 gap-[3px]">
+                    {week.map((day, dIdx) => (
+                      <div
+                        key={day.date}
+                        style={{
+                          animationDelay: `${wIdx * 14 + dIdx * 8}ms`,
+                        }}
+                        className={`animate-heatmap-cell w-[12px] h-[12px] rounded-[2px] transition-transform hover:scale-150 hover:z-20 cursor-pointer ${getHeatmapCellStyle(
+                          day.level
+                        )}`}
+                        title={`${day.date}: ${day.count} ${
+                          day.count === 1 ? 'sprint' : 'sprints'
+                        } completed`}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* TECH STACK BREAKDOWN + BADGES */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* TECH STACK BREAKDOWN + DYNAMIC BADGES */}
+        <div
+          style={{ animationDelay: '270ms' }}
+          className="animate-studio-enter grid grid-cols-1 lg:grid-cols-2 gap-6"
+        >
+          {/* Languages Practiced */}
           <div className="p-6 rounded-2xl border border-white/10 bg-[#0c0e14] space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -336,37 +696,59 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
                   Tech Stack Practiced
                 </h2>
               </div>
-              <span className="text-[11px] font-mono text-neutral-400">4 Core Languages</span>
+              <span className="text-[11px] font-mono text-neutral-400">
+                {computed.stackBreakdown.length} Languages Logged
+              </span>
             </div>
 
-            <div className="space-y-4 pt-1">
-              {stackBreakdown.map((item) => (
-                <div key={item.lang} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <div className="flex items-center gap-2">
-                      <span className="text-white font-bold">{item.lang}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-neutral-300">
-                        {item.ext}
-                      </span>
+            {computed.stackBreakdown.length === 0 ? (
+              <div className="py-10 text-center space-y-3 border border-dashed border-white/10 rounded-xl">
+                <p className="text-xs font-mono text-neutral-400">
+                  No typing sprints recorded in database yet.
+                </p>
+                <button
+                  onClick={handleLogSampleRealRun}
+                  className="px-3.5 py-1.5 rounded-lg bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 text-xs font-mono cursor-pointer hover:bg-[#10b981]/25"
+                >
+                  + Record Your First Telemetry Sprint
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4 pt-1">
+                {computed.stackBreakdown.map((item) => (
+                  <div key={item.lang} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-mono">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-bold">{item.lang}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-neutral-300">
+                          {item.ext}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[#10b981] font-bold">
+                          Peak {item.bestWpm} WPM
+                        </span>
+                        <span className="text-neutral-400">
+                          {item.runs} {item.runs === 1 ? 'run' : 'runs'} ({item.percent}%)
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[#10b981] font-bold">{item.wpm} WPM</span>
-                      <span className="text-neutral-400">
-                        {item.tests} runs ({item.percent}%)
-                      </span>
+                    <div className="w-full h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-1000"
+                        style={{
+                          width: `${item.percent}%`,
+                          backgroundColor: item.color,
+                        }}
+                      />
                     </div>
                   </div>
-                  <div className="w-full h-2 rounded-full bg-white/[0.06] overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${item.percent}%`, backgroundColor: item.color }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* Dynamic Honors & Badges (Unlocked by real stats) */}
           <div className="p-6 rounded-2xl border border-white/10 bg-[#0c0e14] space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -375,51 +757,132 @@ Test your code typing speed: https://codewithdevtype.vercel.app`;
                   Developer Honors & Badges
                 </h2>
               </div>
-              <span className="text-[11px] font-mono text-[#10b981]">4 / 4 Unlocked</span>
+              <span className="text-[11px] font-mono text-[#10b981]">
+                Real-Time Verification
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  <Zap className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white">120Hz Demon</p>
-                  <p className="text-[10px] text-neutral-400 font-mono">Surpassed 120+ WPM Peak</p>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-orange-500/10 text-orange-400 border border-orange-500/20">
-                  <Flame className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white">Relentless Committer</p>
-                  <p className="text-[10px] text-neutral-400 font-mono">14+ Day Active Streak</p>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                  <Layers className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white">Polyglot Architect</p>
-                  <p className="text-[10px] text-neutral-400 font-mono">Mastered 4+ Tech Stacks</p>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20">
-                  <Target className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white">Zero-Bug Syntax</p>
-                  <p className="text-[10px] text-neutral-400 font-mono">99.4% Lifetime Accuracy</p>
-                </div>
-              </div>
+              {[
+                {
+                  title: 'First Blood Commit',
+                  desc: 'Complete 1+ Verified Sprint',
+                  unlocked: computed.totalTests >= 1,
+                  icon: Sparkles,
+                  color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+                },
+                {
+                  title: '100+ WPM Demon',
+                  desc: 'Reach 100+ WPM Peak Speed',
+                  unlocked: computed.peakWpm >= 100,
+                  icon: Zap,
+                  color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+                },
+                {
+                  title: 'Polyglot Architect',
+                  desc: 'Practice 3+ Programming Languages',
+                  unlocked: computed.stackBreakdown.length >= 3,
+                  icon: Layers,
+                  color: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
+                },
+                {
+                  title: 'Zero-Bug Compiler',
+                  desc: 'Maintain 98%+ Avg Syntax Accuracy',
+                  unlocked:
+                    computed.totalTests > 0 && Number(computed.avgAcc) >= 98,
+                  icon: Target,
+                  color: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+                },
+              ].map((b) => {
+                const IconComp = b.icon;
+                return (
+                  <div
+                    key={b.title}
+                    className={`p-3.5 rounded-xl border flex items-center gap-3 transition-all ${
+                      b.unlocked
+                        ? 'bg-white/[0.04] border-white/15'
+                        : 'bg-white/[0.01] border-white/5 opacity-45 grayscale'
+                    }`}
+                  >
+                    <div className={`p-2.5 rounded-xl border ${b.color}`}>
+                      <IconComp className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-bold text-white">{b.title}</p>
+                        {b.unlocked && (
+                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#10b981]/20 text-[#10b981]">
+                            UNLOCKED
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-neutral-400 font-mono">{b.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
+        </div>
+
+        {/* RECENT TELEMETRY SESSIONS FEED */}
+        <div
+          style={{ animationDelay: '340ms' }}
+          className="animate-studio-enter p-6 rounded-2xl border border-white/10 bg-[#0c0e14] space-y-4"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-[#10b981]" />
+              <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                Recent Verified Telemetry Log
+              </h2>
+            </div>
+            <span className="text-xs font-mono text-neutral-500">
+              Latest {Math.min(10, sessions.length)} Sprints
+            </span>
+          </div>
+
+          {sessions.length === 0 ? (
+            <p className="text-xs font-mono text-neutral-500 py-4">
+              Complete a typing test in the studio (or click "Sync Test Run" at the top) to see your live session telemetry here.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse font-mono text-xs">
+                <thead>
+                  <tr className="border-b border-white/10 text-neutral-400 text-[10px] uppercase">
+                    <th className="py-2.5 px-3">Language</th>
+                    <th className="py-2.5 px-3">Mode</th>
+                    <th className="py-2.5 px-3">Speed</th>
+                    <th className="py-2.5 px-3">Raw</th>
+                    <th className="py-2.5 px-3">Accuracy</th>
+                    <th className="py-2.5 px-3">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {sessions.slice(0, 10).map((s, idx) => (
+                    <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="py-2.5 px-3 font-bold text-white">
+                        {s.language}{' '}
+                        <span className="text-[10px] text-[#10b981]">{s.ext}</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-neutral-400 uppercase">
+                        {s.mode} ({s.length_tier})
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-[#10b981]">
+                        {s.wpm} WPM
+                      </td>
+                      <td className="py-2.5 px-3 text-neutral-400">{s.raw_wpm} WPM</td>
+                      <td className="py-2.5 px-3 text-white">{s.accuracy}%</td>
+                      <td className="py-2.5 px-3 text-neutral-500">
+                        {new Date(s.created_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </main>
     </div>

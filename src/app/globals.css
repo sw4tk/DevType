@@ -119,3 +119,41 @@ body {
     0 8px 18px rgba(0, 0, 0, 0.9),
     0 0 16px var(--dt-accent, #10b981);
 }
+
+@keyframes heatmapWave {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) translateY(6px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.15) translateY(-1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes studioSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+    filter: blur(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
+.animate-heatmap-cell {
+  opacity: 0;
+  animation: heatmapWave 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-studio-enter {
+  opacity: 0;
+  animation: studioSlideUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
