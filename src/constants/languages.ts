@@ -5,7 +5,7 @@ export interface SnippetItem {
   badge: string;
   category: string;
   code: string;
-  difficulty?: 'easy' | 'medium' | 'hard' | 'expert';
+  difficulty?: 'beginner' | 'easy' | 'medium' | 'hard' | 'expert';
   sourceType?: 'verified' | 'synthetic' | 'coach';
 }
 
