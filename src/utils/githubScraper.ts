@@ -147,7 +147,7 @@ export async function seedSupabaseCorpusNow(): Promise<{
 }> {
   let total = 0;
   for (const lang of ['typescript', 'rust', 'python', 'go']) {
-    for (const len of ['short', 'medium', 'long'] as SnippetLength[]) {
+    for (const len of ['beginner', 'short', 'medium', 'long'] as SnippetLength[]) {
       const harvested = await harvestGitHubCorpusForLanguage(lang, len, true);
       total += harvested.length;
     }

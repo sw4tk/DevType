@@ -112,7 +112,7 @@ const StudioHeaderDock = memo(function StudioHeaderDock({
           </button>
 
           <div className={`hidden xl:flex items-center p-0.5 shrink-0 ${uiStyle.pillClass}`}>
-            {(['short', 'medium', 'long'] as SnippetLength[]).map((len) => (
+            {(['beginner', 'short', 'medium', 'long'] as SnippetLength[]).map((len) => (
               <button
                 key={len}
                 onClick={() => onSelectLength(len)}
@@ -123,7 +123,7 @@ const StudioHeaderDock = memo(function StudioHeaderDock({
                     : 'text-neutral-500 hover:text-neutral-300'
                 }`}
               >
-                {len === 'short' ? 'S' : len === 'medium' ? 'M' : 'L'}
+                {len === 'beginner' ? 'B' : len === 'short' ? 'S' : len === 'medium' ? 'M' : 'L'}
               </button>
             ))}
           </div>

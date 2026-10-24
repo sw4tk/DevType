@@ -49,7 +49,7 @@ export default function TypingTest() {
 
   // New User-Configurable Layout & Typography Settings
   const [showKeyboard, setShowKeyboard] = useState<boolean>(true);
-  const [fontSize, setFontSize] = useState<number>(15);
+  const [fontSize, setFontSize] = useState(18);
 
   const [activeSnippet, setActiveSnippet] = useState<SnippetItem | null>(null);
 
