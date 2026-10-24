@@ -1,5 +1,6 @@
 'use client';
 import React, { memo } from 'react';
+import AuthButtons from '@/components/auth/AuthButtons';
 import {
   LanguageSpec,
   SnippetLength,
@@ -166,9 +167,9 @@ const StudioHeaderDock = memo(function StudioHeaderDock({
           })}
         </div>
 
-        {/* ZONE 3 (RIGHT): Unified Control Strip + Never-Clipped Profile Pill */}
+        {/* ZONE 3 (RIGHT): Unified Control Strip + Auth Profile */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Grouped Icon Cluster so buttons never overflow the dock */}
+          {/* Grouped Icon Cluster */}
           <div className={`flex items-center gap-0.5 p-1 ${uiStyle.pillClass}`}>
             <button
               onClick={onRollRandom}
@@ -254,55 +255,7 @@ const StudioHeaderDock = memo(function StudioHeaderDock({
             </button>
           </div>
 
-          {/* Crisp User Profile Pill (Never squished or clipped) */}
-          <button
-            onClick={onOpenProfile}
-            style={{
-              borderColor: user ? `${theme.accent}88` : "rgba(255,255,255,0.16)",
-              background: user
-                ? `linear-gradient(180deg, ${theme.accent}26 0%, ${theme.accent}0d 100%)`
-                : "linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)",
-              boxShadow: "0 4px 0 0 #060609, 0 6px 14px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.22)",
-            }}
-            className="group flex items-center gap-2.5 pl-2 pr-3.5 py-1 rounded-xl border active:translate-y-[2px] transition-all cursor-pointer shrink-0"
-            title="Open Full-Screen Developer Telemetry & Profile"
-          >
-            {user ? (
-              <>
-                <div className="relative shrink-0">
-                  <img
-                    src={user.avatarUrl}
-                    alt={user.username}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src =
-                        "https://github.com/identicons/devtype.png";
-                    }}
-                    style={{ borderColor: theme.accent }}
-                    className="w-6 h-6 rounded-lg object-cover border-[1.5px] bg-black avatar-3d"
-                  />
-                  <span
-                    style={{ backgroundColor: theme.accent, boxShadow: `0 0 6px ${theme.accent}` }}
-                    className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-black"
-                  />
-                </div>
-                <span className="font-poppins text-xs font-bold text-white tracking-tight whitespace-nowrap">
-                  @{user.username}
-                </span>
-              </>
-            ) : (
-              <>
-                <div
-                  className="w-6 h-6 rounded-lg flex items-center justify-center bg-white/10 border border-white/20 shrink-0 avatar-3d"
-                  style={{ color: theme.accent }}
-                >
-                  <User className="w-3.5 h-3.5" />
-                </div>
-                <span className="font-poppins text-xs font-bold text-white whitespace-nowrap">
-                  Sign In
-                </span>
-              </>
-            )}
-          </button>
+          <AuthButtons />
         </div>
       </div>
     </header>
