@@ -138,6 +138,9 @@ export default function TypingTest() {
         if (savedPatterns) setCumulativeWeakPatterns(JSON.parse(savedPatterns));
       } catch {}
 
+      if (window.location.search.includes('error=') || window.location.hash.includes('error=')) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
       const params = new URLSearchParams(window.location.search);
       const ghostParam = params.get('ghost');
       if (ghostParam) {

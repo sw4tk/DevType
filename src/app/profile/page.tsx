@@ -38,7 +38,7 @@ function TelemetryBootFallback({ bootStep = 1 }: { bootStep?: number }) {
   ];
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-6 py-20 flex flex-col items-center justify-center font-mono">
+    <div className="w-full max-w-6xl mx-auto px-6 flex flex-col items-center justify-center font-mono min-h-[calc(100vh-200px)]">
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0b0d13] p-6 shadow-2xl space-y-5 animate-studio-enter">
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div className="flex items-center gap-2">
