@@ -43,6 +43,8 @@ import {
 } from 'lucide-react';
 
 interface ResultsProps {
+  isGuest?: boolean;
+  onRetrySync?: () => void;
   stats: SessionStats;
   history: TelemetryPoint[];
   code: string;
@@ -80,6 +82,7 @@ const itemVariants: Variants = {
 };
 
 export default function ResultsDashboard({
+  isGuest = false,
   stats,
   history,
   code,
@@ -90,6 +93,7 @@ export default function ResultsDashboard({
   ghostChallengerWpm,
   cloudSyncStatus = 'local',
   syncError,
+  onRetrySync,
   theme = STUDIO_THEMES[0],
   onRestart,
   onNextRandom,
@@ -137,6 +141,14 @@ export default function ResultsDashboard({
   });
 
   useEffect(() => {
+    if (isGuest) {
+      setToast({
+        visible: true,
+        type: 'error',
+        msg: '🔒 Guest Mode: Test results are not saved. Sign in to save your progress & telemetry.',
+      });
+      return;
+    }
     if (cloudSyncStatus === 'syncing') {
       setToast({ visible: true, type: 'loading', msg: '🚀 Beaming your keystrokes to the cloud...' });
     } else if (cloudSyncStatus === 'synced') {
@@ -154,7 +166,7 @@ export default function ResultsDashboard({
         msg: syncError || '💾 Saved locally (Cloud connection snoozing)',
       });
     }
-  }, [cloudSyncStatus, syncError]);
+  }, [isGuest, cloudSyncStatus, syncError]);
 
   const metrics = useMemo(() => {
     const isInvalid = Boolean(stats.isFlaggedInvalid || stats.accuracy < 45);
@@ -884,7 +896,23 @@ export default function ResultsDashboard({
           <Zap className="w-3 h-3" style={{ color: theme.accent }} />
           <span>
             Theme: <strong className="text-neutral-300">{theme.name}</strong> • Cloud Sync:{' '}
-            <strong className="text-emerald-400 uppercase">{cloudSyncStatus}</strong>
+            <strong className={cloudSyncStatus === 'synced' ? 'text-emerald-400 uppercase' : 'text-amber-400 uppercase'}>{cloudSyncStatus}</strong>
+            {isGuest && onOpenModalTab && (
+              <button
+                onClick={() => onOpenModalTab('profile')}
+                className="ml-2 px-2 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[10px] font-bold cursor-pointer transition-colors"
+              >
+                🔒 Sign In to Save
+              </button>
+            )}
+            {!isGuest && cloudSyncStatus === 'local' && onRetrySync && (
+              <button
+                onClick={onRetrySync}
+                className="ml-2 px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-neutral-200 text-[10px] font-bold cursor-pointer transition-colors"
+              >
+                ↻ Retry Sync
+              </button>
+            )}
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -923,12 +951,35 @@ export default function ResultsDashboard({
                 {toast.type === 'loading'
                   ? 'Uplink Active...'
                   : toast.type === 'success'
-                  ? 'Cloud Sync Secured'
-                  : 'Supabase Sync Failed (Diagnostic)'}
+                  ? 'Cloud Sync Secured' : isGuest ? 'Guest Session (Unsaved)' : 'Supabase Sync Failed (Diagnostic)'}
               </div>
               <div className="text-[11px] text-white/90 break-words mt-0.5 leading-snug">
                 {toast.msg}
               </div>
+              {toast.type === 'error' && isGuest && onOpenModalTab && (
+                <button
+                  onClick={() => onOpenModalTab('profile')}
+                  className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/40 text-amber-100 font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer active:scale-95"
+                >
+                  <span>Sign In to Save</span>
+                </button>
+              )}
+              {toast.type === 'error' && !isGuest && onRetrySync && (
+                <button
+                  onClick={() => {
+                    setToast({
+                      visible: true,
+                      type: 'loading',
+                      msg: '🚀 Retrying cloud sync...',
+                    });
+                    onRetrySync();
+                  }}
+                  className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/30 hover:bg-red-500/50 border border-red-400/40 text-white font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer active:scale-95"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Retry Sync</span>
+                </button>
+              )}
             </div>
             <button
               onClick={() => setToast((prev) => ({ ...prev, visible: false }))}

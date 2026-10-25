@@ -211,3 +211,30 @@ button, a {
 button:active:not(:disabled), a:active {
   transform: scale(0.96) translateY(1px);
 }
+
+
+:root {
+  --theme-accent: #10b981; /* Default Emerald */
+  --theme-accent-glow: rgba(16,185,129,0.3);
+  --theme-bg: #06070a;
+}
+
+[data-theme="dracula"] {
+  --theme-accent: #bd93f9;
+  --theme-accent-glow: rgba(189,147,249,0.3);
+}
+
+[data-theme="synthwave"] {
+  --theme-accent: #ff7edb;
+  --theme-accent-glow: rgba(255,126,219,0.3);
+}
+
+[data-theme="monokai"] {
+  --theme-accent: #a6e22e;
+  --theme-accent-glow: rgba(166,226,46,0.3);
+}
+
+[data-theme="cyberpunk"] {
+  --theme-accent: #fce22a;
+  --theme-accent-glow: rgba(252,226,42,0.3);
+}

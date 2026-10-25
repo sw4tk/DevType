@@ -20,34 +20,36 @@ export async function recordTypingSession(
   session: Omit<TypingSessionRecord, 'created_at'>
 ) {
   const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Guest Mode: Do not save data locally or to the cloud if not logged in
+  if (!user) {
+    return;
+  }
+
   const payload: TypingSessionRecord = {
     ...session,
     created_at: new Date().toISOString(),
   };
 
-  // Always save to local backup immediately so zero runs are ever lost
   try {
     const existing = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]');
     existing.unshift(payload);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(existing.slice(0, 500)));
   } catch {}
 
-  // Save to Supabase if authenticated
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    await supabase.from('typing_sessions').insert({
-      user_id: user.id,
-      language: session.language,
-      ext: session.ext,
-      mode: session.mode,
-      length_tier: session.length_tier,
-      wpm: Math.round(session.wpm),
-      raw_wpm: Math.round(session.raw_wpm),
-      accuracy: Number(session.accuracy.toFixed(2)),
-      lines_typed: session.lines_typed,
-      duration_seconds: Math.round(session.duration_seconds),
-    });
-  }
+  await supabase.from('typing_sessions').insert({
+    user_id: user.id,
+    language: session.language,
+    ext: session.ext,
+    mode: session.mode,
+    length_tier: session.length_tier,
+    wpm: Math.round(session.wpm),
+    raw_wpm: Math.round(session.raw_wpm),
+    accuracy: Number(session.accuracy.toFixed(2)),
+    lines_typed: session.lines_typed,
+    duration_seconds: Math.round(session.duration_seconds),
+  });
 }
 
 export async function fetchUserTelemetry() {

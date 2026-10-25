@@ -44,10 +44,10 @@ function TelemetryBootFallback({ bootStep = 1 }: { bootStep?: number }) {
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
-            <span className="w-2.5 h-2.5 rounded-full bg-[#10b981]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[var(--theme-accent)]" />
             <span className="text-xs text-neutral-400 ml-2">devtype://telemetry-sync</span>
           </div>
-          <span className="text-[10px] text-[#10b981] animate-pulse">120Hz SYNC</span>
+          <span className="text-[10px] text-[var(--theme-accent)] animate-pulse">120Hz SYNC</span>
         </div>
         <div className="space-y-2.5 text-xs">
           {bootLogs.map((log, index) => (
@@ -57,7 +57,7 @@ function TelemetryBootFallback({ bootStep = 1 }: { bootStep?: number }) {
                 index <= bootStep ? 'opacity-100' : 'opacity-20'
               }`}
             >
-              <span className="text-[#10b981] font-bold">
+              <span className="text-[var(--theme-accent)] font-bold">
                 {index < bootStep ? '✓' : index === bootStep ? '›' : '·'}
               </span>
               <span
@@ -72,7 +72,7 @@ function TelemetryBootFallback({ bootStep = 1 }: { bootStep?: number }) {
         </div>
         <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
           <div
-            className="h-full bg-[#10b981] transition-all duration-300 shadow-[0_0_12px_#10b981]"
+            className="h-full bg-[var(--theme-accent)] transition-all duration-300 shadow-[0_0_12px_var(--theme-accent)]"
             style={{ width: `${((bootStep + 1) / bootLogs.length) * 100}%` }}
           />
         </div>
@@ -234,7 +234,7 @@ function ProfileTelemetry() {
       .map((item) => ({
         ...item,
         percent: totalTests > 0 ? Math.round((item.runs / totalTests) * 100) : 0,
-        color: colorPalette[item.lang] || '#10b981',
+        color: colorPalette[item.lang] || 'var(--theme-accent)',
       }));
 
     const mainStack =
@@ -282,15 +282,15 @@ function ProfileTelemetry() {
   const getHeatmapCellStyle = (level: number) => {
     switch (level) {
       case 0:
-        return 'bg-[#161b22] border border-[#10b981]/15';
+        return 'bg-[#161b22] border border-[var(--theme-accent)]/15';
       case 1:
-        return 'bg-[#0e4429] border border-[#10b981]/30';
+        return 'bg-[#0e4429] border border-[var(--theme-accent)]/30';
       case 2:
-        return 'bg-[#006d32] border border-[#10b981]/50';
+        return 'bg-[#006d32] border border-[var(--theme-accent)]/50';
       case 3:
-        return 'bg-[#26a641] border border-[#10b981]/70';
+        return 'bg-[#26a641] border border-[var(--theme-accent)]/70';
       default:
-        return 'bg-[#39d353] border border-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.5)]';
+        return 'bg-[#39d353] border border-[var(--theme-accent)] shadow-[0_0_8px_var(--theme-accent-glow)0.5)]';
     }
   };
 
@@ -324,15 +324,15 @@ function ProfileTelemetry() {
           className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-mono transition-all cursor-pointer"
         >
           {copied ? (
-            <Check className="w-3.5 h-3.5 text-[#10b981]" />
+            <Check className="w-3.5 h-3.5 text-[var(--theme-accent)]" />
           ) : (
-            <Share2 className="w-3.5 h-3.5 text-[#10b981]" />
+            <Share2 className="w-3.5 h-3.5 text-[var(--theme-accent)]" />
           )}
           <span>{copied ? 'Flex Copied!' : 'Copy Flex Card'}</span>
         </button>
         <button
           onClick={handleShareTwitter}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#10b981] hover:bg-[#0ea572] text-black font-bold text-xs font-mono transition-all cursor-pointer shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--theme-accent)] hover:bg-[#0ea572] text-black font-bold text-xs font-mono transition-all cursor-pointer shadow-[0_0_20px_var(--theme-accent-glow)0.3)]"
         >
           <Share2 className="w-3.5 h-3.5" />
           <span>Flex on X</span>
@@ -343,16 +343,16 @@ function ProfileTelemetry() {
         style={{ animationDelay: '80ms' }}
         className="animate-studio-enter relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#10131c] via-[#0b0d13] to-[#08090d] p-8 shadow-2xl"
       >
-        <div className="absolute -top-24 -right-24 w-96 h-96 bg-[#10b981]/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -top-24 -right-24 w-96 h-96 bg-[var(--theme-accent)]/10 rounded-full blur-3xl pointer-events-none" />
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             <div className="relative">
               <img
                 src={avatarUrl}
                 alt={username}
-                className="w-24 h-24 rounded-2xl object-cover border-2 border-[#10b981] shadow-[0_0_25px_rgba(16,185,129,0.3)] bg-black"
+                className="w-24 h-24 rounded-2xl object-cover border-2 border-[var(--theme-accent)] shadow-[0_0_25px_var(--theme-accent-glow)0.3)] bg-black"
               />
-              <span className="absolute -bottom-2 -right-2 px-2.5 py-0.5 rounded-lg text-[11px] font-mono font-black bg-[#10b981] text-black border-2 border-[#08090d]">
+              <span className="absolute -bottom-2 -right-2 px-2.5 py-0.5 rounded-lg text-[11px] font-mono font-black bg-[var(--theme-accent)] text-black border-2 border-[#08090d]">
                 LVL {computed.level}
               </span>
             </div>
@@ -362,7 +362,7 @@ function ProfileTelemetry() {
                   {fullName}
                 </h1>
                 <span className="text-sm font-mono text-neutral-400">@{username}</span>
-                <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-mono font-bold bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30">
+                <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-mono font-bold bg-[var(--theme-accent)]/15 text-[var(--theme-accent)] border border-[var(--theme-accent)]/30">
                   <Award className="w-3.5 h-3.5" /> {computed.tier}
                 </span>
               </div>
@@ -371,7 +371,7 @@ function ProfileTelemetry() {
                   <input
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
-                    className="bg-black/60 border border-[#10b981]/50 rounded-lg px-3 py-1 text-xs font-mono text-white w-72"
+                    className="bg-black/60 border border-[var(--theme-accent)]/50 rounded-lg px-3 py-1 text-xs font-mono text-white w-72"
                     placeholder="Your developer bio..."
                   />
                   <input
@@ -382,7 +382,7 @@ function ProfileTelemetry() {
                   />
                   <button
                     onClick={handleSaveProfileMeta}
-                    className="px-3 py-1 rounded-lg bg-[#10b981] text-black font-mono text-xs font-bold cursor-pointer"
+                    className="px-3 py-1 rounded-lg bg-[var(--theme-accent)] text-black font-mono text-xs font-bold cursor-pointer"
                   >
                     Save
                   </button>
@@ -404,13 +404,13 @@ function ProfileTelemetry() {
               <div className="pt-1 max-w-md space-y-1">
                 <div className="flex justify-between text-[10px] font-mono text-neutral-400">
                   <span>EXPERIENCE TELEMETRY</span>
-                  <span className="text-[#10b981]">
+                  <span className="text-[var(--theme-accent)]">
                     {computed.xpProgress}% to LVL {computed.level + 1}
                   </span>
                 </div>
                 <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                   <div
-                    className="h-full bg-[#10b981] rounded-full shadow-[0_0_10px_#10b981] transition-all duration-700"
+                    className="h-full bg-[var(--theme-accent)] rounded-full shadow-[0_0_10px_var(--theme-accent)] transition-all duration-700"
                     style={{ width: `${computed.xpProgress}%` }}
                   />
                 </div>
@@ -432,7 +432,7 @@ function ProfileTelemetry() {
                   github.com/{username}
                 </a>
                 <span className="flex items-center gap-1.5 bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/5 text-neutral-300">
-                  <Cpu className="w-3.5 h-3.5 text-[#10b981]" /> Stack: {computed.mainStack}
+                  <Cpu className="w-3.5 h-3.5 text-[var(--theme-accent)]" /> Stack: {computed.mainStack}
                 </span>
                 <span className="flex items-center gap-1.5 bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/5 text-neutral-300">
                   <Keyboard className="w-3.5 h-3.5 text-amber-400" /> {gear}
@@ -445,7 +445,7 @@ function ProfileTelemetry() {
               <p className="text-[10px] uppercase font-mono tracking-widest text-neutral-400">
                 Total Sprints
               </p>
-              <p className="text-3xl font-black font-mono text-[#10b981]">
+              <p className="text-3xl font-black font-mono text-[var(--theme-accent)]">
                 {computed.totalTests}
               </p>
               <p className="text-[10px] font-mono text-neutral-500">
@@ -472,7 +472,7 @@ function ProfileTelemetry() {
         style={{ animationDelay: '140ms' }}
         className="animate-studio-enter grid grid-cols-2 lg:grid-cols-4 gap-4"
       >
-        <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[#10b981]/40 transition-all space-y-1">
+        <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[var(--theme-accent)]/40 transition-all space-y-1">
           <div className="flex items-center justify-between text-neutral-400">
             <span className="text-xs font-mono uppercase">Peak Speed (PB)</span>
             <Zap className="w-4 h-4 text-amber-400" />
@@ -485,7 +485,7 @@ function ProfileTelemetry() {
             Raw Burst: {computed.rawBurst} WPM
           </p>
         </div>
-        <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[#10b981]/40 transition-all space-y-1">
+        <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[var(--theme-accent)]/40 transition-all space-y-1">
           <div className="flex items-center justify-between text-neutral-400">
             <span className="text-xs font-mono uppercase">Average Pace</span>
             <Keyboard className="w-4 h-4 text-sky-400" />
@@ -498,15 +498,15 @@ function ProfileTelemetry() {
             Across {computed.totalTests} Verified Runs
           </p>
         </div>
-        <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[#10b981]/40 transition-all space-y-1">
+        <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[var(--theme-accent)]/40 transition-all space-y-1">
           <div className="flex items-center justify-between text-neutral-400">
             <span className="text-xs font-mono uppercase">Syntax Accuracy</span>
-            <Target className="w-4 h-4 text-[#10b981]" />
+            <Target className="w-4 h-4 text-[var(--theme-accent)]" />
           </div>
           <p className="text-3xl font-black font-mono text-white">{computed.avgAcc}%</p>
-          <p className="text-[11px] font-mono text-[#10b981]">Real-Time Compiler Checked</p>
+          <p className="text-[11px] font-mono text-[var(--theme-accent)]">Real-Time Compiler Checked</p>
         </div>
-        <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[#10b981]/40 transition-all space-y-1">
+        <div className="p-5 rounded-2xl border border-white/10 bg-[#0c0e14] hover:border-[var(--theme-accent)]/40 transition-all space-y-1">
           <div className="flex items-center justify-between text-neutral-400">
             <span className="text-xs font-mono uppercase">Lines Synthesized</span>
             <Terminal className="w-4 h-4 text-purple-400" />
@@ -524,7 +524,7 @@ function ProfileTelemetry() {
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-[#10b981]" />
+            <Activity className="w-4 h-4 text-[var(--theme-accent)]" />
             <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
               365-Day Syntax Contribution Matrix
             </h2>
@@ -534,11 +534,11 @@ function ProfileTelemetry() {
           </div>
           <div className="flex items-center gap-1.5 text-[10px] font-mono text-neutral-400">
             <span>Less</span>
-            <div className="w-3 h-3 rounded-[2px] bg-[#161b22] border border-[#10b981]/15" />
-            <div className="w-3 h-3 rounded-[2px] bg-[#0e4429] border border-[#10b981]/30" />
-            <div className="w-3 h-3 rounded-[2px] bg-[#006d32] border border-[#10b981]/50" />
-            <div className="w-3 h-3 rounded-[2px] bg-[#26a641] border border-[#10b981]/70" />
-            <div className="w-3 h-3 rounded-[2px] bg-[#39d353] border border-[#10b981]" />
+            <div className="w-3 h-3 rounded-[2px] bg-[#161b22] border border-[var(--theme-accent)]/15" />
+            <div className="w-3 h-3 rounded-[2px] bg-[#0e4429] border border-[var(--theme-accent)]/30" />
+            <div className="w-3 h-3 rounded-[2px] bg-[#006d32] border border-[var(--theme-accent)]/50" />
+            <div className="w-3 h-3 rounded-[2px] bg-[#26a641] border border-[var(--theme-accent)]/70" />
+            <div className="w-3 h-3 rounded-[2px] bg-[#39d353] border border-[var(--theme-accent)]" />
             <span>More</span>
           </div>
         </div>
@@ -598,7 +598,7 @@ function ProfileTelemetry() {
               </p>
               <Link
                 href="/"
-                className="inline-block px-3.5 py-1.5 rounded-lg bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 text-xs font-mono cursor-pointer hover:bg-[#10b981]/25"
+                className="inline-block px-3.5 py-1.5 rounded-lg bg-[var(--theme-accent)]/15 text-[var(--theme-accent)] border border-[var(--theme-accent)]/30 text-xs font-mono cursor-pointer hover:bg-[var(--theme-accent)]/25"
               >
                 + Launch Studio & Complete a Sprint
               </Link>
@@ -615,7 +615,7 @@ function ProfileTelemetry() {
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-[#10b981] font-bold">
+                      <span className="text-[var(--theme-accent)] font-bold">
                         Peak {item.bestWpm} WPM
                       </span>
                       <span className="text-neutral-400">
@@ -643,7 +643,7 @@ function ProfileTelemetry() {
                 Developer Honors & Badges
               </h2>
             </div>
-            <span className="text-[11px] font-mono text-[#10b981]">
+            <span className="text-[11px] font-mono text-[var(--theme-accent)]">
               Real-Time Verification
             </span>
           </div>
@@ -695,7 +695,7 @@ function ProfileTelemetry() {
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs font-bold text-white">{b.title}</p>
                       {b.unlocked && (
-                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#10b981]/20 text-[#10b981]">
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[var(--theme-accent)]/20 text-[var(--theme-accent)]">
                           UNLOCKED
                         </span>
                       )}
@@ -715,7 +715,7 @@ function ProfileTelemetry() {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-[#10b981]" />
+            <Clock className="w-4 h-4 text-[var(--theme-accent)]" />
             <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
               Recent Verified Telemetry Log
             </h2>
@@ -746,12 +746,12 @@ function ProfileTelemetry() {
                   <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
                     <td className="py-2.5 px-3 font-bold text-white">
                       {s.language}{' '}
-                      <span className="text-[10px] text-[#10b981]">{s.ext}</span>
+                      <span className="text-[10px] text-[var(--theme-accent)]">{s.ext}</span>
                     </td>
                     <td className="py-2.5 px-3 text-neutral-400 uppercase">
                       {s.mode} ({s.length_tier})
                     </td>
-                    <td className="py-2.5 px-3 font-bold text-[#10b981]">{s.wpm} WPM</td>
+                    <td className="py-2.5 px-3 font-bold text-[var(--theme-accent)]">{s.wpm} WPM</td>
                     <td className="py-2.5 px-3 text-neutral-400">{s.raw_wpm} WPM</td>
                     <td className="py-2.5 px-3 text-white">{s.accuracy}%</td>
                     <td className="py-2.5 px-3 text-neutral-500">
@@ -779,13 +779,13 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#06070a] text-neutral-100 font-sans selection:bg-[#10b981]/30 pb-24">
+    <div className="min-h-screen bg-[#06070a] text-neutral-100 font-sans selection:bg-[var(--theme-accent)]/30 pb-24">
       <nav className="w-full max-w-6xl mx-auto px-6 py-6 flex flex-wrap items-center justify-between gap-4 animate-studio-dock">
         <Link
           href="/"
           className="flex items-center gap-2 text-xs font-mono text-neutral-300 hover:text-white transition-all bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 px-3.5 py-2 rounded-xl"
         >
-          <ArrowLeft className="w-3.5 h-3.5 text-[#10b981]" />
+          <ArrowLeft className="w-3.5 h-3.5 text-[var(--theme-accent)]" />
           Return to Typing Studio
         </Link>
         <button

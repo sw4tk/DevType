@@ -1,3 +1,4 @@
+import { createClient } from '@/utils/supabase/client';
 import { DeveloperUser, HistoryRecord } from '@/constants/languages';
 
 const STORAGE_URL_KEY = 'dt_sb_url';
@@ -59,7 +60,17 @@ export function signInWithGitHubOAuth() {
 export async function syncSessionToCloud(
   user: DeveloperUser | null,
   record: HistoryRecord
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; isGuest?: boolean }> {
+  try {
+    const supabase = createClient();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) {
+      return { ok: false, isGuest: true, error: 'Guest Mode: Sign in to save your runs to the cloud' };
+    }
+  } catch {
+    return { ok: false, isGuest: true, error: 'Guest Mode: Sign in to save your runs to the cloud' };
+  }
+
   const { url, key, configured } = getSupabaseCredentials();
   if (!configured) {
     return { ok: false, error: 'Missing NEXT_PUBLIC_SUPABASE_URL or ANON_KEY in .env.local' };

@@ -1,4 +1,5 @@
 'use client';
+import { createClient } from '@/utils/supabase/client';
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useCodeTypingEngine } from '@/hooks/useCodeTypingEngine';
 import { useMechanicalAudio, SwitchProfile } from '@/hooks/useMechanicalAudio';
@@ -82,8 +83,28 @@ export default function TypingTest() {
   const [cumulativeWeakPatterns, setCumulativeWeakPatterns] = useState<Record<string, number>>({});
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'local' | 'syncing'>('local');
   const [syncError, setSyncError] = useState<string>('');
+  const [pendingSyncEntry, setPendingSyncEntry] = useState<HistoryRecord | null>(null);
+
+  const handleRetrySync = useCallback(() => {
+    if (!pendingSyncEntry) return;
+    setCloudSyncStatus('syncing');
+    syncSessionToCloud(user, pendingSyncEntry).then((res) => {
+      if (res.ok) {
+        setCloudSyncStatus('synced');
+        setSyncError('');
+      } else {
+        setCloudSyncStatus('local');
+        setSyncError(res.error || 'Failed to sync to Supabase');
+      }
+    });
+  }, [user, pendingSyncEntry]);
 
   const sparkTriggerRef = useRef<(() => void) | null>(null);
+  const hasRecordedRef = useRef<boolean>(false);
+  const currentLangSpec = useMemo(
+    () => LANGUAGES.find((l) => l.id === selectedLang) || LANGUAGES[0],
+    [selectedLang]
+  );
   const [todayStr, setTodayStr] = useState<string>('2026-10-23');
 
   const theme = useMemo(
@@ -133,7 +154,16 @@ export default function TypingTest() {
         if (savedFontSize) setFontSize(parseInt(savedFontSize, 10) || 15);
         if (savedLogs) setSessionLogs(JSON.parse(savedLogs));
         if (savedDaily) setDailyBestWpm(parseInt(savedDaily, 10));
-        if (savedUser) setUser(JSON.parse(savedUser));
+        if (savedUser) {
+          const supabase = createClient();
+          const { data: { user: realAuthUser } } = await supabase.auth.getUser();
+          if (realAuthUser) {
+            setUser(JSON.parse(savedUser));
+          } else {
+            localStorage.removeItem('dt_user_profile');
+            setUser(null);
+          }
+        }
         if (savedMisses) setCumulativeMissedKeys(JSON.parse(savedMisses));
         if (savedPatterns) setCumulativeWeakPatterns(JSON.parse(savedPatterns));
       } catch {}
@@ -339,19 +369,47 @@ export default function TypingTest() {
   }, [selectedLang, gameMode]);
 
   useEffect(() => {
+    if (status !== 'finished') {
+      hasRecordedRef.current = false;
+      return;
+    }
+    if (hasRecordedRef.current) return;
+    hasRecordedRef.current = true;
+
+    if (!user) {
+      setCloudSyncStatus('local');
+      setSyncError('🔒 Guest Mode: Sign in to save your test results.');
+      setPendingSyncEntry(null);
+      return;
+    }
+
     if (status === 'finished') {
-      // Call this right when the test finishes successfully:
+      // Guest Mode: Allow testing & ResultsDashboard, but skip all data saving if not logged in
+      if (!user) {
+        setCloudSyncStatus('local');
+        setSyncError('');
+        setPendingSyncEntry(null);
+        return;
+      }
+
+      const lastMsForTelemetry =
+        stats.keystrokeLog.length > 0
+          ? stats.keystrokeLog[stats.keystrokeLog.length - 1].ms
+          : 15000;
+      const actualDurationSec = Math.max(1, Math.round(lastMsForTelemetry / 1000));
+
       recordTypingSession({
-        language: currentLangSpec.name,         // e.g. 'Python'
-        ext: `.${currentLangSpec.ext}`,         // e.g. '.py'
-        mode: gameMode,                         // e.g. 'sprint', '30', etc.
-        length_tier: lengthMode,                // e.g. 'medium', 'beginner'
-        wpm: Math.round(stats.wpm),                   // your calculated WPM
-        raw_wpm: Math.round(stats.rawWpm || stats.wpm),     // your raw WPM
-        accuracy: Number(stats.accuracy.toFixed(1)),  // your accuracy percentage
-        lines_typed: code.split('\n').length,   // number of lines in the snippet
-        duration_seconds: 30,                   // time taken or tier duration
-      });                        
+        language: currentLangSpec.name,
+        ext: `.${currentLangSpec.ext}`,
+        mode: gameMode,
+        length_tier: lengthMode,
+        wpm: Math.round(stats.wpm),
+        raw_wpm: Math.round(stats.rawWpm || stats.wpm),
+        accuracy: Number(stats.accuracy.toFixed(1)),
+        lines_typed: code.split('\n').length,
+        duration_seconds: actualDurationSec,
+      }).catch((err) => console.error('Telemetry error:', err));
+
       if (!stats.isFlaggedInvalid && stats.wpm > personalBest) {
         setPersonalBest(stats.wpm);
         try {
@@ -387,11 +445,7 @@ export default function TypingTest() {
         return next;
       });
 
-      const lastMs =
-        stats.keystrokeLog.length > 0
-          ? stats.keystrokeLog[stats.keystrokeLog.length - 1].ms
-          : 15000;
-      const durationSec = Math.max(1, Math.round(lastMs / 1000));
+      const durationSec = actualDurationSec;
 
       const newEntry: HistoryRecord = {
         date: todayStr,
@@ -406,6 +460,7 @@ export default function TypingTest() {
         chars: code.length,
         durationSec,
       };
+      setPendingSyncEntry(newEntry);
 
       if (!stats.isFlaggedInvalid) {
         try {
@@ -495,6 +550,8 @@ export default function TypingTest() {
   if (status === 'finished') {
     return (
       <ResultsDashboard
+        isGuest={!user}
+        onRetrySync={handleRetrySync}
         stats={{ ...stats, maxStreak }}
         history={history}
         code={code}
@@ -527,7 +584,6 @@ export default function TypingTest() {
   }
 
   const dimChrome = focusZenDim && status === 'typing';
-  const currentLangSpec = LANGUAGES.find((l) => l.id === selectedLang) || LANGUAGES[0];
 
   return (
     <div
