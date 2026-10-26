@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { LANGUAGES, HistoryRecord } from '@/constants/languages';
 import { UIStyleSpec } from '@/constants/uiStyles';
+import { signInWithGitHubOAuth } from '@/utils/supabaseClient';
 import {
   User,
   Award,
@@ -129,14 +130,11 @@ export default function AuthProfileView({
     .sort((a, b) => b.best - a.best);
 
   const handleQuickOAuth = (provider: 'github' | 'google') => {
-    onLogin({
-      username: handleInput.trim() || 'swastik_dev',
-      displayName: nameInput.trim() || 'Swastik Mandal',
-      roleTitle: roleInput.trim() || 'Principal Engineer',
-      provider,
-      avatarColor: selectedGrad,
-      joinedAt: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-    });
+    if (provider === 'github') {
+      signInWithGitHubOAuth();
+    } else if (typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
   };
 
   if (!user) {

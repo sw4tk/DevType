@@ -154,15 +154,37 @@ export default function TypingTest() {
         if (savedFontSize) setFontSize(parseInt(savedFontSize, 10) || 15);
         if (savedLogs) setSessionLogs(JSON.parse(savedLogs));
         if (savedDaily) setDailyBestWpm(parseInt(savedDaily, 10));
-        if (savedUser) {
-          const supabase = createClient();
-          const { data: { user: realAuthUser } } = await supabase.auth.getUser();
-          if (realAuthUser) {
-            setUser(JSON.parse(savedUser));
-          } else {
-            localStorage.removeItem('dt_user_profile');
-            setUser(null);
-          }
+        const supabase = createClient();
+        const { data: { user: realAuthUser } } = await supabase.auth.getUser();
+        if (realAuthUser) {
+          const savedParsed = savedUser ? JSON.parse(savedUser) : null;
+          const handle =
+            realAuthUser.user_metadata?.user_name ||
+            realAuthUser.user_metadata?.preferred_username ||
+            realAuthUser.email?.split('@')[0] ||
+            'developer';
+          const verifiedUser: DeveloperUser = {
+            id: realAuthUser.id,
+            username: handle,
+            email: realAuthUser.email || `${handle}@github.user`,
+            avatarUrl:
+              realAuthUser.user_metadata?.avatar_url ||
+              `https://github.com/${handle}.png`,
+            githubHandle: handle,
+            title: savedParsed?.title || 'Full-Stack Systems Engineer',
+            isCloudSynced: true,
+            joinedAt: (realAuthUser.created_at || currentIsoDate).slice(0, 10),
+            socials: savedParsed?.socials || {
+              github: handle,
+              location: 'India',
+              bio: 'Building high-frequency web apps, low-latency engines & clean developer tools.',
+            },
+          };
+          setUser(verifiedUser);
+          localStorage.setItem('dt_user_profile', JSON.stringify(verifiedUser));
+        } else {
+          localStorage.removeItem('dt_user_profile');
+          setUser(null);
         }
         if (savedMisses) setCumulativeMissedKeys(JSON.parse(savedMisses));
         if (savedPatterns) setCumulativeWeakPatterns(JSON.parse(savedPatterns));
@@ -205,6 +227,48 @@ export default function TypingTest() {
     };
 
     initializeDevType();
+
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const authUser = session?.user;
+      if (authUser) {
+        const handle =
+          authUser.user_metadata?.user_name ||
+          authUser.user_metadata?.preferred_username ||
+          authUser.email?.split('@')[0] ||
+          'developer';
+        setUser((prev) => {
+          const verified: DeveloperUser = {
+            id: authUser.id,
+            username: handle,
+            email: authUser.email || `${handle}@github.user`,
+            avatarUrl:
+              authUser.user_metadata?.avatar_url ||
+              `https://github.com/${handle}.png`,
+            githubHandle: handle,
+            title: prev?.title || 'Full-Stack Systems Engineer',
+            isCloudSynced: true,
+            joinedAt: (authUser.created_at || new Date().toISOString()).slice(0, 10),
+            socials: prev?.socials || {
+              github: handle,
+              location: 'India',
+              bio: 'Building high-frequency web apps, low-latency engines & clean developer tools.',
+            },
+          };
+          try {
+            localStorage.setItem('dt_user_profile', JSON.stringify(verified));
+          } catch {}
+          return verified;
+        });
+      } else {
+        setUser(null);
+        try {
+          localStorage.removeItem('dt_user_profile');
+        } catch {}
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const recentAvgWpm = useMemo(() => {
@@ -735,11 +799,13 @@ export default function TypingTest() {
             localStorage.setItem('dt_user_profile', JSON.stringify(u));
           } catch {}
         }}
-        onLogoutUser={() => {
-          setUser(null);
+        onLogoutUser={async () => {
           try {
+            const supabase = createClient();
+            await supabase.auth.signOut();
             localStorage.removeItem('dt_user_profile');
           } catch {}
+          setUser(null);
         }}
         sessionLogs={sessionLogs}
         todayStr={todayStr}

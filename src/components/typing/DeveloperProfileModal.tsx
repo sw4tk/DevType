@@ -325,19 +325,14 @@ export default function DeveloperProfileModal({
 
   const handleSaveSocials = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanHandle = (socialsForm.github || user?.username || 'sw4tk')
-      .trim()
-      .replace(/^@/, '');
+    if (!user) return;
     const updatedUser: DeveloperUser = {
-      id: user?.id || `dev_${cleanHandle.toLowerCase()}`,
-      username: cleanHandle,
-      email: user?.email || `${cleanHandle}@github.user`,
-      avatarUrl: `https://github.com/${cleanHandle}.png`,
-      githubHandle: cleanHandle,
-      title: roleInput.trim() || user?.title || 'Full-Stack Systems Engineer',
-      isCloudSynced: isSupabaseConfigured(),
-      joinedAt: user?.joinedAt || todayStr,
-      socials: socialsForm,
+      ...user,
+      title: roleInput.trim() || user.title || 'Full-Stack Systems Engineer',
+      socials: {
+        ...socialsForm,
+        github: user.username,
+      },
     };
     onLoginUser(updatedUser);
     setSavedBanner(true);
@@ -563,65 +558,37 @@ export default function DeveloperProfileModal({
             {/* LEFT PANE (4 COLS): DEVELOPER IDENTITY, BIO & SOCIAL LINKS */}
             <div className="lg:col-span-4 p-5 bg-black/20 flex flex-col justify-between overflow-y-auto">
               {!user ? (
-                <form onSubmit={handleInstantLogin} className="space-y-3 my-auto">
+                <div className="space-y-4 my-auto p-2">
                   <div className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-emerald-400 font-bold">
-                    <Cloud className="w-3.5 h-3.5" /> Developer Identity Pass
+                    <Cloud className="w-3.5 h-3.5" /> Verified Supabase Auth
                   </div>
                   <h2 className="text-base font-bold text-white leading-snug">
-                    Claim Your Developer Handle & Link Socials
+                    Authenticate Your Developer Account
                   </h2>
                   <p className="text-[11px] text-neutral-400 leading-relaxed">
-                    Enter your GitHub handle to pull your live avatar and unlock your full-page
-                    macOS telemetry dossier.
+                    Sign in with your verified account to prevent stat spoofing, sync your WPM telemetry to Supabase, and unlock your Career Dossier.
                   </p>
 
-                  <div>
-                    <label className="block text-[10px] uppercase text-neutral-400 mb-1">
-                      GitHub Username
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={githubHandleInput}
-                      onChange={(e) => setGithubHandleInput(e.target.value)}
-                      placeholder="sw4tk"
-                      className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500/60"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] uppercase text-neutral-400 mb-1">
-                      Engineering Role / Headline
-                    </label>
-                    <input
-                      type="text"
-                      value={roleInput}
-                      onChange={(e) => setRoleInput(e.target.value)}
-                      placeholder="Full-Stack Systems Engineer"
-                      className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500/60"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    style={{ backgroundColor: accentColor }}
-                    className="w-full py-2.5 rounded-xl text-neutral-950 font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer hover:opacity-95 transition-all shadow-lg"
-                  >
-                    <UserCheck className="w-4 h-4" />
-                    Initialize Developer Workspace
-                  </button>
-
-                  {cloudActive && (
+                  <div className="space-y-2.5 pt-2">
                     <button
                       type="button"
-                      onClick={signInWithGitHubOAuth}
-                      className="w-full py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
+                      onClick={() => signInWithGitHubOAuth()}
+                      style={{ backgroundColor: accentColor }}
+                      className="w-full py-2.5 rounded-xl text-neutral-950 font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer hover:opacity-95 transition-all shadow-lg"
                     >
-                      <Terminal className="w-3.5 h-3.5" />
-                      GitHub OAuth
+                      <Terminal className="w-4 h-4" />
+                      Continue with GitHub OAuth
                     </button>
-                  )}
-                </form>
+
+                    <a
+                      href="/login"
+                      className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
+                    >
+                      <UserCheck className="w-4 h-4" style={{ color: accentColor }} />
+                      Sign In / Create Account
+                    </a>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center gap-3.5">

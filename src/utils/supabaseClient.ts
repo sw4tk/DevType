@@ -47,83 +47,72 @@ export function isSupabaseConfigured(): boolean {
   return getSupabaseCredentials().configured;
 }
 
-export function signInWithGitHubOAuth() {
-  const { url, configured } = getSupabaseCredentials();
-  if (!configured) return false;
-  const redirectTo = typeof window !== 'undefined' ? window.location.origin : '';
-  window.location.href = `${url}/auth/v1/authorize?provider=github&redirect_to=${encodeURIComponent(
-    redirectTo
-  )}`;
-  return true;
+export async function signInWithGitHubOAuth() {
+  const supabase = createClient();
+  const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'github',
+    options: { redirectTo },
+  });
+  return !error;
 }
 
 export async function syncSessionToCloud(
-  user: DeveloperUser | null,
+  _user: DeveloperUser | null,
   record: HistoryRecord
 ): Promise<{ ok: boolean; error?: string; isGuest?: boolean }> {
-  try {
-    const supabase = createClient();
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) {
-      return { ok: false, isGuest: true, error: 'Guest Mode: Sign in to save your runs to the cloud' };
-    }
-  } catch {
-    return { ok: false, isGuest: true, error: 'Guest Mode: Sign in to save your runs to the cloud' };
-  }
-
-  const { url, key, configured } = getSupabaseCredentials();
-  if (!configured) {
-    return { ok: false, error: 'Missing NEXT_PUBLIC_SUPABASE_URL or ANON_KEY in .env.local' };
-  }
-
   if (record.wpm <= 0 || record.accuracy < 45) {
     return { ok: false, error: 'Run skipped: Accuracy below 45% integrity threshold' };
   }
 
   try {
-    const endpoint = `${url}/rest/v1/typing_sessions`;
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal',
-      },
-      body: JSON.stringify({
-        user_id: user?.id || 'guest_engineer',
-        username: user?.username || 'guest_dev',
-        avatar_url: user?.avatarUrl || 'https://github.com/identicons/devtype.png',
-        lang_id: record.langId,
-        game_mode: record.gameMode || 'standard',
-        wpm: Math.round(record.wpm),
-        raw_wpm: Math.round(record.rawWpm || record.wpm),
-        accuracy: Number(record.accuracy.toFixed(1)),
-        consistency: Math.round(record.consistency || 90),
-        chars: record.chars,
-        duration_sec: Math.max(1, Math.round(record.durationSec || 15)),
-      }),
+    const supabase = createClient();
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+
+    if (!authUser) {
+      return {
+        ok: false,
+        isGuest: true,
+        error: 'Guest Mode: Sign in to save your runs to the cloud',
+      };
+    }
+
+    const username =
+      authUser.user_metadata?.user_name ||
+      authUser.user_metadata?.preferred_username ||
+      authUser.email?.split('@')[0] ||
+      'developer';
+
+    const avatarUrl =
+      authUser.user_metadata?.avatar_url ||
+      `https://github.com/${username}.png`;
+
+    const { error } = await supabase.from('typing_sessions').insert({
+      user_id: authUser.id,
+      username,
+      avatar_url: avatarUrl,
+      lang_id: record.langId,
+      game_mode: record.gameMode || 'standard',
+      wpm: Math.round(record.wpm),
+      raw_wpm: Math.round(record.rawWpm || record.wpm),
+      accuracy: Number(record.accuracy.toFixed(1)),
+      consistency: Math.round(record.consistency || 90),
+      chars: record.chars,
+      duration_sec: Math.max(1, Math.round(record.durationSec || 15)),
     });
 
-    if (!res.ok) {
-      let detail = '';
-      try {
-        const errJson = await res.json();
-        detail = errJson.message || errJson.hint || errJson.details || JSON.stringify(errJson);
-      } catch {
-        detail = await res.text();
-      }
-      if (res.status === 404) {
-        return {
-          ok: false,
-          error: `HTTP 404 on typing_sessions: Table not exposed in public schema or PostgREST cache stale (${detail.slice(0, 80)})`,
-        };
-      }
-      return { ok: false, error: `HTTP ${res.status}: ${detail.slice(0, 110)}` };
+    if (error) {
+      return { ok: false, error: `Supabase Error: ${error.message}` };
     }
+
     return { ok: true };
   } catch (err: unknown) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Network connection failed' };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Network connection failed',
+    };
   }
 }
 
