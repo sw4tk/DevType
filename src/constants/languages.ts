@@ -108,16 +108,17 @@ export interface LanguageSpec {
     | 'hardware'
     | 'asm'
     | 'hell';
+  enabled?: boolean;
 }
 
-export const QUICK_LANGUAGES = ['typescript', 'rust', 'python', 'go', 'cpp'];
+export const QUICK_LANGUAGES = ['typescript', 'python', 'go'];
 
 export const LANGUAGES: LanguageSpec[] = [
-  { id: 'typescript', name: 'TypeScript', ext: 'ts', badge: 'TS 5.8', category: 'Web', family: 'ts' },
+  { id: 'typescript', name: 'TypeScript', ext: 'ts', badge: 'TS 5.8', category: 'Web', family: 'ts', enabled: true },
   { id: 'javascript', name: 'JavaScript', ext: 'js', badge: 'ES2025', category: 'Web', family: 'js' },
   { id: 'rust', name: 'Rust', ext: 'rs', badge: 'RUST 2024', category: 'Systems', family: 'rust' },
-  { id: 'python', name: 'Python', ext: 'py', badge: 'PY 3.13', category: 'Data & AI', family: 'python' },
-  { id: 'go', name: 'Go', ext: 'go', badge: 'GO 1.24', category: 'Systems', family: 'go' },
+  { id: 'python', name: 'Python', ext: 'py', badge: 'PY 3.13', category: 'Data & AI', family: 'python', enabled: true },
+  { id: 'go', name: 'Go', ext: 'go', badge: 'GO 1.24', category: 'Systems', family: 'go', enabled: true },
   { id: 'cpp', name: 'C++', ext: 'cpp', badge: 'C++23', category: 'Systems', family: 'cpp' },
   { id: 'c', name: 'C', ext: 'c', badge: 'C23', category: 'Systems', family: 'c' },
   { id: 'csharp', name: 'C#', ext: 'cs', badge: '.NET 9', category: 'JVM & .NET', family: 'jvm' },

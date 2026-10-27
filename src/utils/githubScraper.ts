@@ -1,28 +1,8 @@
 import { SnippetItem, LANGUAGES, SnippetLength } from '@/constants/languages';
-import { sanitizeAndChunkCode, synthesizeUnlimitedSnippet } from '@/utils/codeSynthesizer';
-import { getSupabaseCredentials, pushCorpusBatchToSupabase } from '@/utils/supabaseClient';
+import { synthesizeUnlimitedSnippet, pickCoachSnippet, CorpusEntry } from '@/utils/codeSynthesizer';
+import corpusData from '../../data/corpus.json';
 
 const SEEN_HASHES_STORAGE_KEY = 'dt_seen_hashes_v3';
-const RECENT_FINGERPRINTS_KEY = 'dt_recent_fingerprints_v3';
-
-export const GITHUB_CORPUS_SOURCES: Record<string, string[]> = {
-  typescript: [
-    'https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v3/types.ts',
-    'https://raw.githubusercontent.com/pmndrs/zustand/main/src/vanilla.ts',
-    'https://raw.githubusercontent.com/TanStack/query/main/packages/query-core/src/queryObserver.ts',
-  ],
-  rust: [
-    'https://raw.githubusercontent.com/tokio-rs/tokio/master/tokio/src/sync/notify.rs',
-    'https://raw.githubusercontent.com/serde-rs/json/master/src/value/mod.rs',
-  ],
-  python: [
-    'https://raw.githubusercontent.com/tiangolo/fastapi/master/fastapi/routing.py',
-    'https://raw.githubusercontent.com/psf/requests/main/src/requests/models.py',
-  ],
-  go: [
-    'https://raw.githubusercontent.com/gin-gonic/gin/master/context.go',
-  ],
-};
 
 export function quickHash(str: string): string {
   let h = 2166136261 >>> 0;
@@ -40,24 +20,6 @@ function getPersistentSeenHashes(): Set<string> {
   } catch {
     return new Set();
   }
-}
-
-function getRecentFingerprints(): string[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    return JSON.parse(localStorage.getItem(RECENT_FINGERPRINTS_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function recordFingerprint(fp: string) {
-  if (typeof window === 'undefined') return;
-  try {
-    const list = getRecentFingerprints();
-    list.push(fp);
-    localStorage.setItem(RECENT_FINGERPRINTS_KEY, JSON.stringify(list.slice(-40)));
-  } catch {}
 }
 
 export function markSnippetAsSeen(code: string): boolean {
@@ -81,161 +43,98 @@ export function isSnippetUnseen(code: string): boolean {
   return !getPersistentSeenHashes().has(quickHash(code));
 }
 
-function matchesLengthBucket(code: string, lengthMode: SnippetLength): boolean {
-  const lines = code.split('\n').length;
-  if (lengthMode === 'beginner') return lines >= 1 && lines <= 5;
-  if (lengthMode === 'short') return lines >= 2 && lines <= 6;
-  if (lengthMode === 'medium') return lines >= 7 && lines <= 15;
-  return lines >= 16;
-}
-
-export async function harvestGitHubCorpusForLanguage(
-  langId: string,
-  lengthMode: SnippetLength = 'medium',
-  syncToSupabase = true
-): Promise<SnippetItem[]> {
-  const urls = GITHUB_CORPUS_SOURCES[langId];
-  const spec = LANGUAGES.find((l) => l.id === langId) || LANGUAGES[0];
-
-  const generatedBatch: SnippetItem[] = [];
-  for (let i = 0; i < 15; i++) {
-    generatedBatch.push(synthesizeUnlimitedSnippet(langId, lengthMode));
-  }
-
-  if (urls && urls.length > 0) {
-    try {
-      const targetUrl = urls[Math.floor(Math.random() * urls.length)];
-      const repoName =
-        targetUrl.match(/githubusercontent\.com\/([^/]+\/[^/]+)/)?.[1] || 'github';
-      const res = await fetch(targetUrl);
-      if (res.ok) {
-        const rawText = await res.text();
-        const chunks = sanitizeAndChunkCode(rawText, true, lengthMode);
-        chunks.forEach((codeChunk, idx) => {
-          generatedBatch.push({
-            langId: spec.id,
-            label: spec.name,
-            filename: `${repoName.split('/')[1] || 'source'}_L${idx * 10 + 1}.${spec.ext}`,
-            badge: `${lengthMode.toUpperCase()} • GH ${repoName}`,
-            category: spec.category,
-            code: codeChunk,
-          });
-        });
-      }
-    } catch {}
-  }
-
-  if (syncToSupabase && generatedBatch.length > 0) {
-    pushCorpusBatchToSupabase(
-      generatedBatch.slice(0, 25).map((item) => ({
-        lang_id: langId,
-        repo_source: item.badge,
-        filename: item.filename,
-        code: item.code,
-        line_count: item.code.split('\n').length,
-        hash: quickHash(item.code),
-      }))
-    ).catch(() => {});
-  }
-
-  return generatedBatch;
-}
-
-export async function seedSupabaseCorpusNow(): Promise<{
-  totalInserted: number;
-  error?: string;
-}> {
-  let total = 0;
-  for (const lang of ['typescript', 'rust', 'python', 'go']) {
-    for (const len of ['beginner', 'short', 'medium', 'long'] as SnippetLength[]) {
-      const harvested = await harvestGitHubCorpusForLanguage(lang, len, true);
-      total += harvested.length;
-    }
-  }
-  return { totalInserted: total };
-}
-
-// Guaranteed Non-Repeating, Strictly Length-Classified Generator
+// Retrieve from Corpus
 export function getInstantUnseenSnippet(
   langId: string,
   lengthMode: SnippetLength = 'medium'
 ): SnippetItem {
-  const recentFps = getRecentFingerprints();
+  const spec = LANGUAGES.find((l) => l.id === langId) || LANGUAGES[0];
+  
+  if (!spec.enabled) {
+    throw new Error(`Cannot generate snippet for disabled language: ${spec.name}`);
+  }
 
-  // Attempt up to 50 times to guarantee both a brand-new hash AND a non-repeating structural fingerprint
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const candidate = synthesizeUnlimitedSnippet(
-      langId,
-      lengthMode,
-      `${langId}_${lengthMode}_${Date.now()}_${attempt}_${Math.random()}`
-    );
+  if (lengthMode === 'beginner') {
+    return synthesizeUnlimitedSnippet(langId, 'beginner');
+  }
 
-    const firstLineFp = candidate.code.split('\n')[0]?.slice(0, 28) || '';
+  const candidates = (corpusData as { langId: string; tier: string; code: string; path: string; repo: string; license: string }[]).filter(c => c.langId === langId && c.tier === lengthMode);
+  
+  if (candidates.length === 0) {
+    // Honest Empty State Fallback
+    return {
+      langId: spec.id,
+      label: spec.name,
+      filename: 'no_corpus_data.ts',
+      badge: 'EMPTY CORPUS',
+      category: spec.category,
+      code: `// No ${lengthMode} snippets found in data/corpus.json for ${spec.name}.\n// Run scripts/build-corpus.ts to fetch real open-source code.`,
+      difficulty: 'medium',
+      sourceType: 'synthetic'
+    };
+  }
 
-    if (
-      isSnippetUnseen(candidate.code) &&
-      !recentFps.includes(firstLineFp) &&
-      matchesLengthBucket(candidate.code, lengthMode)
-    ) {
+  // Shuffle and pick unseen
+  const shuffled = candidates.sort(() => Math.random() - 0.5);
+  for (const candidate of shuffled) {
+    if (isSnippetUnseen(candidate.code)) {
       markSnippetAsSeen(candidate.code);
-      recordFingerprint(firstLineFp);
-      return candidate;
+      return {
+        langId: spec.id,
+        label: spec.name,
+        filename: candidate.path.split('/').pop() || `${candidate.repo}.${spec.ext}`,
+        badge: `${candidate.repo} • ${candidate.license}`,
+        category: spec.category,
+        code: candidate.code,
+        difficulty: lengthMode === 'long' ? 'hard' : lengthMode === 'medium' ? 'medium' : 'easy',
+        sourceType: 'github'
+      };
     }
   }
 
-  // Fallback with high-entropy timestamp salt
-  const fallback = synthesizeUnlimitedSnippet(
-    langId,
-    lengthMode,
-    `fallback_${Date.now()}_${Math.random()}`
-  );
-  markSnippetAsSeen(fallback.code);
-  return fallback;
+  // Fallback: pick randomly if all are seen
+  const fallback = shuffled[0];
+  return {
+    langId: spec.id,
+    label: spec.name,
+    filename: fallback.path.split('/').pop() || `${fallback.repo}.${spec.ext}`,
+    badge: `${fallback.repo} • ${fallback.license}`,
+    category: spec.category,
+    code: fallback.code,
+    difficulty: lengthMode === 'long' ? 'hard' : lengthMode === 'medium' ? 'medium' : 'easy',
+    sourceType: 'github'
+  };
 }
 
 export async function getNextCorpusSnippet(
   langId: string,
   lengthMode: SnippetLength = 'medium'
 ): Promise<SnippetItem | null> {
-  const { url, key, configured } = getSupabaseCredentials();
+  return getInstantUnseenSnippet(langId, lengthMode);
+}
 
-  // Mix in unseen Supabase cloud snippets that strictly match the requested lengthMode (S / M / L)
-  if (configured && Math.random() < 0.35) {
-    try {
-      const minL = lengthMode === 'beginner' ? 1 : lengthMode === 'short' ? 2 : lengthMode === 'medium' ? 7 : 16;
-      const maxL = lengthMode === 'beginner' ? 5 : lengthMode === 'short' ? 6 : lengthMode === 'medium' ? 15 : 60;
-      const res = await fetch(
-        `${url}/rest/v1/code_corpus?lang_id=eq.${langId}&line_count=gte.${minL}&line_count=lte.${maxL}&limit=40`,
-        {
-          headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: 'no-store',
-        }
-      );
-      if (res.ok) {
-        const rows = await res.json();
-        if (Array.isArray(rows) && rows.length > 0) {
-          const unseenRows = rows.filter(
-            (r: { code?: string }) =>
-              r.code &&
-              isSnippetUnseen(r.code) &&
-              matchesLengthBucket(r.code, lengthMode)
-          );
-          if (unseenRows.length > 0) {
-            const picked = unseenRows[Math.floor(Math.random() * unseenRows.length)];
-            const spec = LANGUAGES.find((l) => l.id === langId) || LANGUAGES[0];
-            markSnippetAsSeen(picked.code);
-            return {
-              langId: spec.id,
-              label: spec.name,
-              filename: picked.filename || `cloud_${spec.id}.${spec.ext}`,
-              badge: `${lengthMode.toUpperCase()} (${picked.code.split('\n').length}L) • CLOUD DB`,
-              category: spec.category,
-              code: picked.code,
-            };
-          }
-        }
-      }
-    } catch {}
+export function getWeakSpotsSnippet(
+  langId: string,
+  lengthMode: SnippetLength = 'medium',
+  missedKeys: Record<string, number> = {},
+  weakPatterns: Record<string, number> = {}
+): SnippetItem {
+  const spec = LANGUAGES.find((l) => l.id === langId) || LANGUAGES[0];
+  if (!spec.enabled) {
+    throw new Error(`Cannot generate snippet for disabled language: ${spec.name}`);
   }
 
-  return getInstantUnseenSnippet(langId, lengthMode);
+  const effectiveTier: SnippetLength = lengthMode === 'beginner' ? 'short' : lengthMode;
+  const langSnippets = (corpusData as CorpusEntry[]).filter((c) => c.langId === langId);
+
+  const chosen = pickCoachSnippet(
+    langSnippets,
+    missedKeys,
+    weakPatterns,
+    effectiveTier,
+    isSnippetUnseen
+  );
+
+  markSnippetAsSeen(chosen.code);
+  return chosen;
 }

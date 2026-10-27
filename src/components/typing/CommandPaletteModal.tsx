@@ -8,6 +8,7 @@ import {
   HistoryRecord,
 } from '@/constants/languages';
 import { STUDIO_THEMES } from '@/constants/themes';
+import { fetchDailyLeaderboard, DailyLeaderboardRow } from '@/utils/telemetry';
 import { UI_STYLES, UIStyleId } from '@/constants/uiStyles';
 import { createSeededRandom, sanitizeAndChunkCode } from '@/utils/codeSynthesizer';
 import {
@@ -115,6 +116,8 @@ export default function CommandPaletteModal({
   const [stripComments, setStripComments] = useState<boolean>(true);
   const [isLoadingGithub, setIsLoadingGithub] = useState<boolean>(false);
   const [githubError, setGithubError] = useState<string>('');
+  const [dailyRows, setDailyRows] = useState<DailyLeaderboardRow[]>([]);
+  const [isLoadingDaily, setIsLoadingDaily] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -125,9 +128,20 @@ export default function CommandPaletteModal({
     }
   }, [isOpen, initialTab]);
 
+  useEffect(() => {
+    if (isOpen && tab === 'daily') {
+      setIsLoadingDaily(true);
+      fetchDailyLeaderboard(todayStr).then((res) => {
+        setDailyRows(res.rows);
+        setIsLoadingDaily(false);
+      });
+    }
+  }, [isOpen, tab, todayStr]);
+
   if (!isOpen) return null;
 
-  const filteredLanguages = LANGUAGES.filter(
+  const enabledLangs = LANGUAGES.filter(l => l.enabled);
+  const filteredLanguages = enabledLangs.filter(
     (l) =>
       l.name.toLowerCase().includes(query.toLowerCase()) ||
       l.category.toLowerCase().includes(query.toLowerCase()) ||
@@ -159,23 +173,10 @@ export default function CommandPaletteModal({
     .filter((m) => m.count > 0)
     .sort((a, b) => b.best - a.best);
 
-  const dailyRng = createSeededRandom(`leaderboard_${todayStr}`);
-  const globalChallengers = [
-    { handle: 'torvalds_rs', lang: 'Rust', wpm: 142 + Math.floor(dailyRng() * 14), acc: 99.6 },
-    { handle: 'primeagen_vim', lang: 'TypeScript', wpm: 131 + Math.floor(dailyRng() * 12), acc: 99.1 },
-    { handle: 'mitchellh_zig', lang: 'Zig', wpm: 124 + Math.floor(dailyRng() * 10), acc: 98.8 },
-    { handle: 'rauchg_edge', lang: 'TypeScript', wpm: 116 + Math.floor(dailyRng() * 10), acc: 98.4 },
-    { handle: 'antirez_c', lang: 'C', wpm: 108 + Math.floor(dailyRng() * 9), acc: 97.9 },
-  ];
-  if (dailyBestWpm > 0) {
-    globalChallengers.push({
-      handle: 'YOU (Verified Local)',
-      lang: 'TypeScript',
-      wpm: dailyBestWpm,
-      acc: 99.0,
-    });
-    globalChallengers.sort((a, b) => b.wpm - a.wpm);
-  }
+  const todaysLogs = sessionLogs.filter((r) => r.date === todayStr);
+  const bestTodayRun = todaysLogs.length > 0 
+    ? todaysLogs.reduce((best, curr) => (curr.wpm > best.wpm ? curr : best)) 
+    : null;
 
   const handleFetchGithub = async () => {
     const trimmed = githubUrl.trim();
@@ -269,7 +270,7 @@ export default function CommandPaletteModal({
               }`}
             >
               <Globe className="w-3.5 h-3.5" />
-              56 Languages
+              {enabledLangs.length} Languages
             </button>
             <button
               onClick={() => setTab('daily')}
@@ -578,11 +579,11 @@ export default function CommandPaletteModal({
 
             <div>
               <div className="text-xs font-bold text-white mb-2">
-                Verified Language Skill Map (Weighted by Accuracy & Velocity)
+                Language Skill Map (Weighted by Accuracy & Velocity)
               </div>
               {masteryByLang.length === 0 ? (
                 <div className="text-xs text-neutral-500 bg-black/30 border border-white/[0.05] rounded-xl p-4 text-center">
-                  Complete your first typing session to unlock verified language fluency ratings.
+                  Complete your first typing session to unlock language fluency ratings.
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -645,31 +646,37 @@ export default function CommandPaletteModal({
 
             <div className="space-y-2">
               <div className="text-xs font-bold text-neutral-300 uppercase tracking-wider">
-                Today&apos;s Global Seed Leaderboard ({todayStr})
+                Today&apos;s Leaderboard ({todayStr} • Top 20)
               </div>
-              <div className="space-y-1.5">
-                {globalChallengers.map((row, idx) => (
-                  <div
-                    key={row.handle}
-                    className={`flex items-center justify-between px-4 py-2.5 rounded-xl border ${
-                      row.handle.includes('YOU')
-                        ? 'bg-emerald-500/15 border-emerald-500/40 text-white'
-                        : 'bg-black/40 border-white/[0.06] text-neutral-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-bold text-amber-400 w-5">#{idx + 1}</span>
-                      <span className="text-xs font-bold">{row.handle}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-white/[0.05] text-neutral-400">
-                        {row.lang}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs">
-                      <span className="text-neutral-400">{row.acc}% ACC</span>
-                      <span className="font-bold text-emerald-400 text-sm">{row.wpm} WPM</span>
-                    </div>
+              <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
+                {isLoadingDaily ? (
+                  <div className="text-xs text-neutral-400 text-center py-4">
+                    Loading daily leaderboard...
                   </div>
-                ))}
+                ) : dailyRows.length === 0 ? (
+                  <div className="text-xs text-neutral-500 text-center py-4 border border-dashed border-white/10 rounded-xl">
+                    No runs yet for today&apos;s seed.
+                  </div>
+                ) : (
+                  dailyRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="flex items-center justify-between px-4 py-2.5 rounded-xl border bg-black/40 border-white/[0.06] text-neutral-200"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-amber-400 w-6">#{row.rank}</span>
+                        <span className="text-xs font-bold">@{row.username}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-white/[0.05] text-neutral-400">
+                          {row.lang_id}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs">
+                        <span className="text-neutral-400">{row.accuracy}% ACC</span>
+                        <span className="font-bold text-emerald-400 text-sm">{row.wpm} WPM</span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -686,7 +693,7 @@ export default function CommandPaletteModal({
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
                 placeholder={
                   tab === 'languages'
-                    ? 'Search 56 languages (Rust, Zig, Solidity, WGSL, Haskell, SQL, Assembly...)'
+                    ? `Search ${enabledLangs.length} languages (Rust, Zig, Solidity, WGSL, Haskell, SQL, Assembly...)`
                     : 'Search 54 themes (Tokyo Night, Dracula, Catppuccin, Cyberpunk, Matrix...)'
                 }
                 className="flex-1 bg-black/60 border border-white/10 rounded-xl px-4 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500/50"

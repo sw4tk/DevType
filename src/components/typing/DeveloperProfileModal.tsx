@@ -10,11 +10,8 @@ import { StudioTheme, STUDIO_THEMES } from '@/constants/themes';
 import {
   isSupabaseConfigured,
   signInWithGitHubOAuth,
-  getSupabaseCredentials,
-  saveSupabaseCredentialsRuntime,
   fetchSupabaseTableStats,
 } from '@/utils/supabaseClient';
-import { seedSupabaseCorpusNow } from '@/utils/githubScraper';
 import { createSeededRandom } from '@/utils/codeSynthesizer';
 import {
   Trophy,
@@ -78,16 +75,12 @@ export default function DeveloperProfileModal({
   } | null>(null);
   const [savedBanner, setSavedBanner] = useState(false);
 
-  // Supabase Runtime Cloud Inspector State
-  const [sbUrlInput, setSbUrlInput] = useState('');
-  const [sbKeyInput, setSbKeyInput] = useState('');
+  // Supabase Cloud Inspector State
   const [dbStats, setDbStats] = useState<{
     sessionsCount: number;
     corpusCount: number;
     error?: string;
   } | null>(null);
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [seedSuccessMsg, setSeedSuccessMsg] = useState('');
 
   const cloudActive = isSupabaseConfigured();
 
@@ -107,15 +100,10 @@ export default function DeveloperProfileModal({
   });
 
   useEffect(() => {
-    if (isOpen) {
-      const creds = getSupabaseCredentials();
-      setSbUrlInput(creds.url);
-      setSbKeyInput(creds.key);
-      if (creds.configured) {
-        fetchSupabaseTableStats().then(setDbStats);
-      }
+    if (isOpen && cloudActive) {
+      fetchSupabaseTableStats().then(setDbStats);
     }
-  }, [isOpen]);
+  }, [isOpen, cloudActive]);
 
   useEffect(() => {
     if (user) {
@@ -339,22 +327,7 @@ export default function DeveloperProfileModal({
     setTimeout(() => setSavedBanner(false), 2200);
   };
 
-  const handleSaveSupabaseConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
-    saveSupabaseCredentialsRuntime(sbUrlInput, sbKeyInput);
-    const stats = await fetchSupabaseTableStats();
-    setDbStats(stats);
-  };
 
-  const handleBulkSeedCorpus = async () => {
-    setIsSeeding(true);
-    setSeedSuccessMsg('');
-    const res = await seedSupabaseCorpusNow();
-    const stats = await fetchSupabaseTableStats();
-    setDbStats(stats);
-    setIsSeeding(false);
-    setSeedSuccessMsg(`Seeded ${res.totalInserted} open-source snippets into Supabase!`);
-  };
 
   const handleExportBackup = () => {
     const dataStr = JSON.stringify({ user, sessionLogs }, null, 2);
@@ -1007,7 +980,7 @@ export default function DeveloperProfileModal({
                 <div className="space-y-3 my-auto">
                   {analytics.langStats.length === 0 ? (
                     <div className="p-8 text-center text-xs text-neutral-500 bg-black/40 rounded-2xl border border-white/[0.06]">
-                      Complete a typing sprint in any of the 56 languages to unlock per-language
+                      Complete a typing sprint in any of the {LANGUAGES.filter((l) => l.enabled).length} languages to unlock per-language
                       mastery telemetry.
                     </div>
                   ) : (
@@ -1160,93 +1133,41 @@ export default function DeveloperProfileModal({
                 </div>
               )}
 
-              {/* BUFFER 6: SUPABASE.ENV (LIVE CLOUD CONNECTOR & 1-CLICK SEEDER) */}
+              {/* BUFFER 6: SUPABASE.ENV (READ-ONLY CLOUD STATUS) */}
               {activeTab === 'cloud' && (
                 <div className="space-y-4 my-auto">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.07] pb-3">
                     <div>
                       <h3 className="text-sm font-bold text-white flex items-center gap-2">
                         <Database className="w-4 h-4" style={{ color: accentColor }} />
-                        Supabase PostgreSQL Cloud Connector & Corpus Seeder
+                        Supabase Cloud Status
                       </h3>
                       <p className="text-[11px] text-neutral-500">
-                        Connect your Supabase project and seed 150+ real GitHub code chunks in one
-                        click
+                        Configured via server/build environment variables (NEXT_PUBLIC_SUPABASE_URL)
                       </p>
                     </div>
                     {dbStats && !dbStats.error && (
                       <span className="px-3 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
-                        Live DB: {dbStats.sessionsCount} runs • {dbStats.corpusCount} snippets
+                        Live DB: {dbStats.sessionsCount} your runs • {dbStats.corpusCount} corpus rows
                       </span>
                     )}
                   </div>
 
-                  <form onSubmit={handleSaveSupabaseConfig} className="space-y-3">
-                    <div>
-                      <label className="block text-[10px] uppercase text-neutral-400 mb-1">
-                        NEXT_PUBLIC_SUPABASE_URL
-                      </label>
-                      <input
-                        type="text"
-                        value={sbUrlInput}
-                        onChange={(e) => setSbUrlInput(e.target.value)}
-                        placeholder="https://your-project-id.supabase.co"
-                        className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500/60"
-                      />
+                  <div className="p-4 rounded-xl bg-black/45 border border-white/[0.07] text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-neutral-400">Environment Configuration</span>
+                      <span className={cloudActive ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                        {cloudActive ? 'Configured' : 'Missing .env.local keys'}
+                      </span>
                     </div>
-
-                    <div>
-                      <label className="block text-[10px] uppercase text-neutral-400 mb-1">
-                        NEXT_PUBLIC_SUPABASE_ANON_KEY
-                      </label>
-                      <input
-                        type="password"
-                        value={sbKeyInput}
-                        onChange={(e) => setSbKeyInput(e.target.value)}
-                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                        className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500/60"
-                      />
-                    </div>
-
-                    <div className="flex gap-3 pt-1">
-                      <button
-                        type="submit"
-                        className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-bold text-xs cursor-pointer transition-all"
-                      >
-                        Save & Test Connection
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleBulkSeedCorpus}
-                        disabled={isSeeding || !cloudActive}
-                        style={{ backgroundColor: accentColor }}
-                        className="flex-1 py-2.5 rounded-xl text-neutral-950 font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 shadow-lg"
-                      >
-                        {isSeeding ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Seeding GitHub Corpus...
-                          </>
-                        ) : (
-                          <>
-                            <Database className="w-4 h-4" />
-                            Seed 150+ Snippets to Supabase Now
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
+                    <p className="text-[11px] text-neutral-500 leading-relaxed">
+                      Database credentials and corpus updates are managed strictly via environment variables and CLI scripts, never from the browser.
+                    </p>
+                  </div>
 
                   {dbStats?.error && (
                     <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300">
                       Status: {dbStats.error}
-                    </div>
-                  )}
-
-                  {seedSuccessMsg && (
-                    <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs text-emerald-300 font-bold">
-                      {seedSuccessMsg}
                     </div>
                   )}
                 </div>

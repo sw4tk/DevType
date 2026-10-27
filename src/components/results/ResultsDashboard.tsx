@@ -17,7 +17,6 @@ import {
   fetchSupabaseTableStats,
   isSupabaseConfigured,
 } from '@/utils/supabaseClient';
-import { seedSupabaseCorpusNow } from '@/utils/githubScraper';
 import LiveKeyboardDeck from '@/components/typing/LiveKeyboardDeck';
 import {
   RotateCcw,
@@ -108,7 +107,6 @@ export default function ResultsDashboard({
   const [dbStats, setDbStats] = useState<{ sessionsCount: number; corpusCount: number } | null>(
     null
   );
-  const [isSeedingDb, setIsSeedingDb] = useState(false);
 
   useEffect(() => {
     if (isSupabaseConfigured()) {
@@ -119,16 +117,6 @@ export default function ResultsDashboard({
       });
     }
   }, [cloudSyncStatus]);
-
-  const handleSeedDatabaseNow = async () => {
-    setIsSeedingDb(true);
-    await seedSupabaseCorpusNow();
-    const updated = await fetchSupabaseTableStats();
-    if (!updated.error) {
-      setDbStats({ sessionsCount: updated.sessionsCount, corpusCount: updated.corpusCount });
-    }
-    setIsSeedingDb(false);
-  };
 
     const [toast, setToast] = useState<{
     visible: boolean;

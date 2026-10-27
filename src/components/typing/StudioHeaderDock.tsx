@@ -100,7 +100,7 @@ const StudioHeaderDock = memo(function StudioHeaderDock({
           <button
             onClick={() => onOpenPaletteTab('languages')}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 cursor-pointer text-xs shrink-0 ${uiStyle.buttonClass}`}
-            title="Switch among 56 Programming Languages (Cmd + K)"
+            title="Switch among enabled Programming Languages (Cmd + K)"
           >
             <span className="font-bold text-white">{currentLangSpec.name}</span>
             <span
@@ -142,7 +142,7 @@ const StudioHeaderDock = memo(function StudioHeaderDock({
               { id: '60', label: '60s' },
               { id: 'suddendeath', label: '1HP' },
               { id: 'zen', label: 'Zen' },
-              { id: 'smartcoach', label: 'Coach' },
+              { id: 'smartcoach', label: 'Weak spots' },
               { id: 'daily', label: 'Daily' },
               { id: 'vim', label: 'Vim' },
             ] as { id: GameMode; label: string }[]

@@ -1,0 +1,103 @@
+{
+  "repositories": [
+    {
+      "owner": "microsoft",
+      "repo": "TypeScript",
+      "ref": "main",
+      "paths": [
+        "src/compiler/parser.ts",
+        "src/compiler/checker.ts"
+      ],
+      "language": "typescript",
+      "license": "Apache-2.0"
+    },
+    {
+      "owner": "vercel",
+      "repo": "next.js",
+      "ref": "canary",
+      "paths": [
+        "packages/next/src/server/next.ts",
+        "packages/next/src/client/router.ts"
+      ],
+      "language": "typescript",
+      "license": "MIT"
+    },
+    {
+      "owner": "facebook",
+      "repo": "react",
+      "ref": "main",
+      "paths": [
+        "packages/react/src/ReactHooks.js",
+        "packages/react-dom/src/client/ReactDOM.js"
+      ],
+      "language": "typescript",
+      "license": "MIT"
+    },
+    {
+      "owner": "pallets",
+      "repo": "flask",
+      "ref": "main",
+      "paths": [
+        "src/flask/app.py",
+        "src/flask/blueprints.py"
+      ],
+      "language": "python",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "owner": "django",
+      "repo": "django",
+      "ref": "main",
+      "paths": [
+        "django/core/handlers/base.py",
+        "django/db/models/query.py"
+      ],
+      "language": "python",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "owner": "psf",
+      "repo": "requests",
+      "ref": "main",
+      "paths": [
+        "requests/sessions.py",
+        "requests/models.py"
+      ],
+      "language": "python",
+      "license": "Apache-2.0"
+    },
+    {
+      "owner": "kubernetes",
+      "repo": "kubernetes",
+      "ref": "master",
+      "paths": [
+        "pkg/kubelet/kubelet.go",
+        "pkg/scheduler/scheduler.go"
+      ],
+      "language": "go",
+      "license": "Apache-2.0"
+    },
+    {
+      "owner": "gin-gonic",
+      "repo": "gin",
+      "ref": "master",
+      "paths": [
+        "gin.go",
+        "routergroup.go"
+      ],
+      "language": "go",
+      "license": "MIT"
+    },
+    {
+      "owner": "gohugoio",
+      "repo": "hugo",
+      "ref": "master",
+      "paths": [
+        "hugolib/site.go",
+        "helpers/path.go"
+      ],
+      "language": "go",
+      "license": "Apache-2.0"
+    }
+  ]
+}

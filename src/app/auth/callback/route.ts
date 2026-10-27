@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { type EmailOtpType } from '@supabase/supabase-js';
+import { safeNext } from '@/utils/safeRedirect';
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type') as EmailOtpType | null;
-  const next = searchParams.get('next') ?? '/auth/verified';
+  const next = safeNext(searchParams.get('next'));
 
   const supabase = await createClient();
 
@@ -34,8 +35,8 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
 
   if (user) {
-    return NextResponse.redirect(`${origin}/auth/verified`);
+    return NextResponse.redirect(`${origin}${next}`);
   }
 
-  return NextResponse.redirect(`${origin}/auth/verified?status=check`);
+  return NextResponse.redirect(`${origin}${safeNext('/auth/verified?status=check')}`);
 }

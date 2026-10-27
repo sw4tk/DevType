@@ -276,60 +276,202 @@ export function synthesizeUnlimitedSnippet(
   lengthMode: SnippetLength = 'medium',
   seed?: string
 ): SnippetItem {
+  if (lengthMode !== 'beginner') {
+    console.warn("synthesizeUnlimitedSnippet is disabled for non-beginner tiers. Use the real corpus.");
+  }
+  
   const spec = LANGUAGES.find((l) => l.id === langId) || LANGUAGES[0];
-  const entropy =
-    seed ||
-    `${langId}_${lengthMode}_${Date.now()}_${Math.random().toString(36).slice(2)}_${
-      typeof performance !== 'undefined' ? performance.now() : 0
-    }`;
+  const entropy = seed || Date.now().toString();
   const rng = createSeededRandom(entropy);
 
-  const ctx1 = buildContext(rng);
-  const ctx2 = buildContext(rng);
   const v1 = Math.floor(rng() * 1000);
-  const v2 = Math.floor(rng() * 1000);
-
-  let code = '';
-  if (lengthMode === 'beginner') {
-    code = genBeginnerBlock(spec.family, v1);
-  } else if (lengthMode === 'short') {
-    code = genShortBlock(spec.family, ctx1, v1);
-  } else if (lengthMode === 'medium') {
-    code = genMediumBlock(spec.family, ctx1, v1);
-  } else {
-    code = genLongBlock(spec.family, ctx1, ctx2, v1, v2);
-  }
-
-  const fileNum = Math.floor(100 + rng() * 899);
+  const code = genBeginnerBlock(spec.family, v1);
   const lineCount = code.split('\n').length;
 
   return {
     langId: spec.id,
     label: spec.name,
-    filename: `${ctx1.domain}_${ctx1.entity}_${fileNum}.${spec.ext}`,
-    badge: `${lengthMode.toUpperCase()} (${lineCount}L) • ${spec.badge}`,
+    filename: `beginner_lesson_${Math.floor(rng() * 900) + 100}.${spec.ext}`,
+    badge: `BEGINNER (${lineCount}L) • ${spec.badge}`,
     category: spec.category,
     code,
-    difficulty: lengthMode === 'beginner' ? 'beginner' : lengthMode === 'long' ? 'hard' : lengthMode === 'medium' ? 'medium' : 'easy',
+    difficulty: 'beginner',
     sourceType: 'synthetic',
   };
 }
 
-export function synthesizeSmartCoachSnippet(
-  langId: string,
+export interface CorpusEntry {
+  id: string;
+  langId: string;
+  code: string;
+  repo: string;
+  path: string;
+  commit?: string;
+  startLine?: number;
+  endLine?: number;
+  license: string;
+  tier: SnippetLength;
+}
+
+export const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+
+export function countSubstringOccurrences(text: string, sub: string): number {
+  if (!text || !sub) return 0;
+  let count = 0;
+  let pos = 0;
+  while (true) {
+    const idx = text.indexOf(sub, pos);
+    if (idx === -1) break;
+    count++;
+    pos = idx + sub.length;
+  }
+  return count;
+}
+
+export function scoreSnippet(
+  code: string,
+  missedKeys: Record<string, number>,
+  weakPatterns: Record<string, number> = {}
+): number {
+  if (!code || code.length === 0) return 0;
+
+  let rawScore = 0;
+
+  for (const [key, weight] of Object.entries(missedKeys)) {
+    if (!key || weight <= 0) continue;
+    const occurrences = countSubstringOccurrences(code, key);
+    if (occurrences > 0) {
+      rawScore += occurrences * weight;
+    }
+  }
+
+  for (const [pattern, weight] of Object.entries(weakPatterns)) {
+    if (!pattern || weight <= 0) continue;
+    const occurrences = countSubstringOccurrences(code, pattern);
+    if (occurrences > 0) {
+      rawScore += occurrences * weight * 2;
+    }
+  }
+
+  return rawScore / code.length;
+}
+
+export function applyMistakeTimeDecay(
+  counts: Record<string, number>,
+  lastUpdatedAtMs: number | null,
+  nowMs: number = Date.now()
+): { decayed: Record<string, number>; didDecay: boolean } {
+  if (!lastUpdatedAtMs || nowMs - lastUpdatedAtMs < FOURTEEN_DAYS_MS) {
+    const cleaned: Record<string, number> = {};
+    for (const [k, v] of Object.entries(counts)) {
+      if (v > 0) cleaned[k] = v;
+    }
+    return { decayed: cleaned, didDecay: false };
+  }
+
+  const periods = Math.max(1, Math.floor((nowMs - lastUpdatedAtMs) / FOURTEEN_DAYS_MS));
+  const factor = Math.pow(2, periods);
+  const decayed: Record<string, number> = {};
+
+  for (const [k, v] of Object.entries(counts)) {
+    const nextVal = Math.floor(v / factor);
+    if (nextVal > 0) {
+      decayed[k] = nextVal;
+    }
+  }
+
+  return { decayed, didDecay: true };
+}
+
+export function pickCoachSnippet(
+  snippets: CorpusEntry[],
   missedKeys: Record<string, number>,
   weakPatterns: Record<string, number> = {},
-  recentAvgWpm: number = 60
+  tier: SnippetLength = 'medium',
+  isUnseen: (code: string) => boolean = () => true,
+  rng: () => number = Math.random
 ): SnippetItem {
-  const patternEntries = Object.entries(weakPatterns).sort((a, b) => b[1] - a[1]);
-  const keyEntries = Object.entries(missedKeys).sort((a, b) => b[1] - a[1]);
-  const topPattern = patternEntries[0]?.[0] || '=>';
-  const topMisses = keyEntries.slice(0, 4).map(([k]) => k);
-  const base = synthesizeUnlimitedSnippet(langId, recentAvgWpm > 80 ? 'long' : 'medium');
+  if (snippets.length === 0) {
+    throw new Error('Cannot pick Weak spots snippet from an empty snippet list');
+  }
+
+  const tierMatches = snippets.filter((s) => s.tier === tier);
+  const pool = tierMatches.length > 0 ? tierMatches : snippets;
+  const unseenPool = pool.filter((s) => isUnseen(s.code));
+  const activePool = unseenPool.length > 0 ? unseenPool : pool;
+
+  const firstSpec =
+    LANGUAGES.find((l) => l.id === activePool[0].langId) || LANGUAGES[0];
+
+  const totalMistakes =
+    Object.values(missedKeys).reduce((acc, v) => acc + (v > 0 ? v : 0), 0) +
+    Object.values(weakPatterns).reduce((acc, v) => acc + (v > 0 ? v : 0), 0);
+
+  if (totalMistakes < 20) {
+    const chosen = activePool[Math.floor(rng() * activePool.length)];
+    const spec = LANGUAGES.find((l) => l.id === chosen.langId) || firstSpec;
+    return {
+      langId: spec.id,
+      label: `Weak spots • ${spec.name}`,
+      filename: chosen.path.split('/').pop() || `${chosen.repo}.${spec.ext}`,
+      badge: `NEED 20+ MISTAKES (${totalMistakes}/20) • RANDOM SNIPPET`,
+      category: spec.category,
+      code: chosen.code,
+      difficulty: tier === 'long' ? 'hard' : tier === 'medium' ? 'medium' : 'easy',
+      sourceType: 'coach',
+    };
+  }
+
+  let bestEntry = activePool[0];
+  let bestScore = -1;
+
+  for (const candidate of activePool) {
+    const s = scoreSnippet(candidate.code, missedKeys, weakPatterns);
+    if (s > bestScore) {
+      bestScore = s;
+      bestEntry = candidate;
+    }
+  }
+
+  const spec = LANGUAGES.find((l) => l.id === bestEntry.langId) || firstSpec;
+
+  const presentTargets: { token: string; count: number; weight: number }[] = [];
+
+  for (const [pattern, weight] of Object.entries(weakPatterns)) {
+    if (!pattern || weight <= 0) continue;
+    const count = countSubstringOccurrences(bestEntry.code, pattern);
+    if (count > 0) {
+      presentTargets.push({ token: pattern, count, weight: weight * 2 });
+    }
+  }
+
+  for (const [key, weight] of Object.entries(missedKeys)) {
+    if (!key || weight <= 0) continue;
+    const count = countSubstringOccurrences(bestEntry.code, key);
+    if (count > 0) {
+      presentTargets.push({ token: key, count, weight });
+    }
+  }
+
+  presentTargets.sort((a, b) => b.weight * b.count - a.weight * a.count);
+
+  const topTargets = presentTargets
+    .slice(0, 4)
+    .map((t) => `${t.token} (${t.count}×)`);
+
+  const badgeText =
+    topTargets.length > 0
+      ? `WEAK SPOTS: ${topTargets.join(' ')}`
+      : `WEAK SPOTS • ${bestEntry.repo}`;
+
   return {
-    ...base,
-    label: `AI Coach • ${base.label}`,
-    badge: `DRILL TARGET: ${topPattern} ${topMisses.join(' ')}`,
+    langId: spec.id,
+    label: `Weak spots • ${spec.name}`,
+    filename: bestEntry.path.split('/').pop() || `${bestEntry.repo}.${spec.ext}`,
+    badge: badgeText,
+    category: spec.category,
+    code: bestEntry.code,
+    difficulty: tier === 'long' ? 'hard' : tier === 'medium' ? 'medium' : 'easy',
     sourceType: 'coach',
   };
 }
@@ -337,41 +479,56 @@ export function synthesizeSmartCoachSnippet(
 export function sanitizeAndChunkCode(
   rawCode: string,
   stripComments: boolean,
-  lengthMode: SnippetLength = 'medium'
+  langId?: string
 ): string[] {
-  const lines = rawCode
-    .split('\n')
-    .map((l) => l.replace(/\t/g, '  ').trimEnd())
-    .filter((l) => {
-      const t = l.trim();
-      if (!t) return false;
-      if (stripComments && (t.startsWith('//') || t.startsWith('#') || t.startsWith('/*') || t.startsWith('*'))) {
-        return false;
-      }
-      return t.length <= 92;
-    });
-
-  const minLines = lengthMode === 'short' ? 3 : lengthMode === 'medium' ? 8 : 18;
-  const maxLines = lengthMode === 'short' ? 5 : lengthMode === 'medium' ? 13 : 28;
-  const stepLines = lengthMode === 'short' ? 4 : lengthMode === 'medium' ? 10 : 22;
-
+  const lines = rawCode.split('\n');
   const chunks: string[] = [];
-  for (let i = 0; i < lines.length; i += stepLines) {
-    const slice = lines.slice(i, i + maxLines);
-    if (slice.length >= minLines) {
-      // Normalize base indentation so snippets don't start with 12 leading spaces
-      const minIndent = slice.reduce((min, line) => {
-        const match = line.match(/^(\s*)\S/);
-        return match ? Math.min(min, match[1].length) : min;
-      }, 99);
-      const normalized =
-        minIndent > 0 && minIndent < 99
-          ? slice.map((l) => l.slice(minIndent)).join('\n')
-          : slice.join('\n');
-      chunks.push(normalized);
+  let currentChunk: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const t = rawLine.trim();
+
+    if (!t) continue;
+
+    if (stripComments) {
+      const isPython = langId === 'python' || langId === 'ruby' || langId === 'shell';
+      const isSql = langId === 'sql' || langId === 'haskell' || langId === 'lua';
+      
+      let isComment = false;
+      if (t.startsWith('//') || t.startsWith('/*') || t.startsWith('*')) isComment = true;
+      else if (isPython && t.startsWith('#')) isComment = true;
+      else if (isSql && t.startsWith('--')) isComment = true;
+
+      if (isComment) continue;
+    }
+
+    // Never arbitrarily truncate lines. Just replace tabs with spaces.
+    currentChunk.push(rawLine.replace(/\t/g, '  '));
+    
+    // Chunking heuristic: Break at obvious boundaries (like blank lines or closing braces)
+    if (currentChunk.length >= 8 && (t === '}' || t === '];' || t === '};')) {
+      chunks.push(currentChunk.join('\n'));
+      currentChunk = [];
+    } else if (currentChunk.length >= 25) {
+      chunks.push(currentChunk.join('\n'));
+      currentChunk = [];
     }
   }
-  return chunks;
+
+  if (currentChunk.length > 0) chunks.push(currentChunk.join('\n'));
+
+  // Normalize base indentation per chunk
+  return chunks.map(chunk => {
+    const chunkLines = chunk.split('\n');
+    const minIndent = chunkLines.reduce((min, line) => {
+      const match = line.match(/^(\s*)\S/);
+      return match ? Math.min(min, match[1].length) : min;
+    }, 99);
+    return minIndent > 0 && minIndent < 99
+      ? chunkLines.map(l => l.slice(minIndent)).join('\n')
+      : chunk;
+  }).filter(c => c.length > 0);
 }
 
 export function tokenizeSyntaxColors(code: string): string[] {

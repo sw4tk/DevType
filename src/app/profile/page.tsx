@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { fetchUserTelemetry, TypingSessionRecord } from '@/utils/telemetry';
+import { LANGUAGES } from '@/constants/languages';
 import { STUDIO_THEMES, StudioTheme } from '@/constants/themes';
 import {
   ArrowLeft,
@@ -49,7 +50,7 @@ function TelemetryBootFallback({ bootStep = 1, theme }: { bootStep?: number; the
             <span className="text-xs text-neutral-400 ml-2">devtype://telemetry-sync</span>
           </div>
           <span className="text-[10px] animate-pulse" style={{ color: theme.accent }}>
-            120Hz SYNC
+            LIVE SYNC
           </span>
         </div>
         <div className="space-y-2.5 text-xs">
@@ -87,7 +88,7 @@ function TelemetryBootFallback({ bootStep = 1, theme }: { bootStep?: number; the
 function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
   const [user, setUser] = useState<any | null>(null);
   const [sessions, setSessions] = useState<TypingSessionRecord[]>([]);
-  const [bio, setBio] = useState('Synthesizing real-world syntax at 120Hz.');
+  const [bio, setBio] = useState('Practicing real-world open-source code snippets.');
   const [gear, setGear] = useState('Custom 65% Mechanical Deck');
   const [editingBio, setEditingBio] = useState(false);
 
@@ -148,8 +149,8 @@ function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
       totalTests > 0
         ? (sessions.reduce((acc, s) => acc + Number(s.accuracy), 0) / totalTests).toFixed(1)
         : '0.0';
-    const totalLines = sessions.reduce((acc, s) => acc + (s.lines_typed || 5), 0);
-    const totalSeconds = sessions.reduce((acc, s) => acc + (s.duration_seconds || 30), 0);
+    const totalLines = sessions.reduce((acc, s) => acc + Math.max(1, Math.round(s.chars / 40)), 0);
+    const totalSeconds = sessions.reduce((acc, s) => acc + Math.round(s.duration_ms / 1000), 0);
 
     const dateCounts: Record<string, number> = {};
     sessions.forEach((s) => {
@@ -211,16 +212,19 @@ function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
     };
 
     sessions.forEach((s) => {
-      if (!langMap[s.language]) {
-        langMap[s.language] = {
-          lang: s.language,
-          ext: s.ext || '.code',
+      const spec = LANGUAGES.find((l) => l.id === s.lang_id);
+      const label = spec ? spec.name : s.lang_id;
+      const ext = spec ? `.${spec.ext}` : '.code';
+      if (!langMap[label]) {
+        langMap[label] = {
+          lang: label,
+          ext,
           runs: 0,
           bestWpm: 0,
         };
       }
-      langMap[s.language].runs += 1;
-      if (s.wpm > langMap[s.language].bestWpm) langMap[s.language].bestWpm = s.wpm;
+      langMap[label].runs += 1;
+      if (s.wpm > langMap[label].bestWpm) langMap[label].bestWpm = s.wpm;
     });
 
     const stackBreakdown = Object.values(langMap)
@@ -518,7 +522,7 @@ function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
             {computed.avgWpm} <span className="text-xs font-normal text-neutral-500">WPM</span>
           </p>
           <p className="text-[11px] font-mono text-neutral-500">
-            Across {computed.totalTests} Verified Runs
+            Across {computed.totalTests} Recorded Runs
           </p>
         </div>
         <div
@@ -545,7 +549,7 @@ function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
           <p className="text-3xl font-black font-mono text-white">
             {computed.totalLines.toLocaleString()}
           </p>
-          <p className="text-[11px] font-mono text-neutral-500">Production AST Snippets</p>
+          <p className="text-[11px] font-mono text-neutral-500">Open-Source Snippets</p>
         </div>
       </div>
 
@@ -560,7 +564,7 @@ function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
               365-Day Syntax Contribution Matrix
             </h2>
             <span className="text-xs font-mono text-neutral-500">
-              ({computed.totalTests} verified runs)
+              ({computed.totalTests} recorded runs)
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-[10px] font-mono text-neutral-400">
@@ -638,7 +642,7 @@ function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
               </h2>
             </div>
             <span className="text-[11px] font-mono text-neutral-400">
-              {computed.stackBreakdown.length} Languages Logged
+              {computed.stackBreakdown.length} / {LANGUAGES.filter(l => l.enabled).length} Languages Logged
             </span>
           </div>
           {computed.stackBreakdown.length === 0 ? (
@@ -781,7 +785,7 @@ function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4" style={{ color: theme.accent }} />
             <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-              Recent Verified Telemetry Log
+              Recent Session Telemetry Log
             </h2>
           </div>
           <span className="text-xs font-mono text-neutral-500">
@@ -809,13 +813,10 @@ function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
                 {sessions.slice(0, 10).map((s, idx) => (
                   <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
                     <td className="py-2.5 px-3 font-bold text-white">
-                      {s.language}{' '}
-                      <span style={{ color: theme.accent }} className="text-[10px]">
-                        {s.ext}
-                      </span>
+                      {s.lang_id}
                     </td>
                     <td className="py-2.5 px-3 text-neutral-400 uppercase">
-                      {s.mode} ({s.length_tier})
+                      {s.mode} ({s.tier})
                     </td>
                     <td className="py-2.5 px-3 font-bold" style={{ color: theme.accent }}>
                       {s.wpm} WPM

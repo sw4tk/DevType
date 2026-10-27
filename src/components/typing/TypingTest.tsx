@@ -11,7 +11,8 @@ import IdeCodeViewport from '@/components/typing/IdeCodeViewport';
 import CommandPaletteModal, { ModalTab } from '@/components/typing/CommandPaletteModal';
 import DeveloperProfileModal from '@/components/typing/DeveloperProfileModal';
 import StudioSettingsModal from '@/components/typing/StudioSettingsModal';
-import { recordTypingSession } from '@/utils/telemetry';
+import { submitTypingSession } from '@/utils/telemetry';
+import { SessionSubmissionInput } from '@/utils/sessionValidation';
 import {
   LANGUAGES,
   QUICK_LANGUAGES,
@@ -29,14 +30,13 @@ import { UI_STYLES, UIStyleId } from '@/constants/uiStyles';
 import {
   pick,
   synthesizeUnlimitedSnippet,
-  synthesizeSmartCoachSnippet,
+  applyMistakeTimeDecay,
 } from '@/utils/codeSynthesizer';
 import {
   getInstantUnseenSnippet,
   getNextCorpusSnippet,
-  harvestGitHubCorpusForLanguage,
+  getWeakSpotsSnippet,
 } from '@/utils/githubScraper';
-import { syncSessionToCloud } from '@/utils/supabaseClient';
 import { Zap, Layers, Terminal, Loader2, Keyboard } from 'lucide-react';
 
 export default function TypingTest() {
@@ -83,21 +83,21 @@ export default function TypingTest() {
   const [cumulativeWeakPatterns, setCumulativeWeakPatterns] = useState<Record<string, number>>({});
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'local' | 'syncing'>('local');
   const [syncError, setSyncError] = useState<string>('');
-  const [pendingSyncEntry, setPendingSyncEntry] = useState<HistoryRecord | null>(null);
+  const [pendingSyncEntry, setPendingSyncEntry] = useState<SessionSubmissionInput | null>(null);
 
   const handleRetrySync = useCallback(() => {
     if (!pendingSyncEntry) return;
     setCloudSyncStatus('syncing');
-    syncSessionToCloud(user, pendingSyncEntry).then((res) => {
+    submitTypingSession(pendingSyncEntry).then((res) => {
       if (res.ok) {
         setCloudSyncStatus('synced');
         setSyncError('');
       } else {
         setCloudSyncStatus('local');
-        setSyncError(res.error || 'Failed to sync to Supabase');
+        setSyncError(res.code ? `[${res.code}] ${res.error}` : res.error || 'Failed to save session');
       }
     });
-  }, [user, pendingSyncEntry]);
+  }, [pendingSyncEntry]);
 
   const sparkTriggerRef = useRef<(() => void) | null>(null);
   const hasRecordedRef = useRef<boolean>(false);
@@ -129,7 +129,9 @@ export default function TypingTest() {
       let initialLang = pick(QUICK_LANGUAGES);
       try {
         const savedLang = localStorage.getItem('dt_last_lang');
-        if (savedLang) initialLang = savedLang;
+        if (savedLang && LANGUAGES.some((l) => l.id === savedLang && l.enabled)) {
+          initialLang = savedLang;
+        }
         setSelectedLang(initialLang);
 
         const savedSmooth = localStorage.getItem('dt_smoothness') as CaretSmoothness | null;
@@ -186,8 +188,32 @@ export default function TypingTest() {
           localStorage.removeItem('dt_user_profile');
           setUser(null);
         }
-        if (savedMisses) setCumulativeMissedKeys(JSON.parse(savedMisses));
-        if (savedPatterns) setCumulativeWeakPatterns(JSON.parse(savedPatterns));
+        const savedMistakesTsRaw = localStorage.getItem('dt_mistakes_updated_at');
+        const savedMistakesTs = savedMistakesTsRaw ? parseInt(savedMistakesTsRaw, 10) : null;
+        const nowMs = Date.now();
+        let didDecayAny = false;
+
+        if (savedMisses) {
+          const parsedMisses = JSON.parse(savedMisses) as Record<string, number>;
+          const { decayed, didDecay } = applyMistakeTimeDecay(parsedMisses, savedMistakesTs, nowMs);
+          setCumulativeMissedKeys(decayed);
+          if (didDecay) {
+            localStorage.setItem('dt_missed_keys', JSON.stringify(decayed));
+            didDecayAny = true;
+          }
+        }
+        if (savedPatterns) {
+          const parsedPatterns = JSON.parse(savedPatterns) as Record<string, number>;
+          const { decayed, didDecay } = applyMistakeTimeDecay(parsedPatterns, savedMistakesTs, nowMs);
+          setCumulativeWeakPatterns(decayed);
+          if (didDecay) {
+            localStorage.setItem('dt_weak_patterns', JSON.stringify(decayed));
+            didDecayAny = true;
+          }
+        }
+        if (!savedMistakesTs || didDecayAny) {
+          localStorage.setItem('dt_mistakes_updated_at', String(nowMs));
+        }
       } catch {}
 
       if (window.location.search.includes('error=') || window.location.hash.includes('error=')) {
@@ -221,7 +247,6 @@ export default function TypingTest() {
         freshSnippet = getInstantUnseenSnippet(initialLang, 'medium');
       }
       setActiveSnippet(freshSnippet);
-      harvestGitHubCorpusForLanguage(initialLang, 'medium', true).catch(() => {});
 
       setTimeout(() => setIsBooting(false), 550);
     };
@@ -296,11 +321,11 @@ export default function TypingTest() {
       }
 
       if (gameMode === 'smartcoach') {
-        const coachItem = synthesizeSmartCoachSnippet(
+        const coachItem = getWeakSpotsSnippet(
           targetLang,
+          targetLen,
           cumulativeMissedKeys,
-          cumulativeWeakPatterns,
-          recentAvgWpm
+          cumulativeWeakPatterns
         );
         setActiveSnippet(coachItem);
         return coachItem.code;
@@ -327,7 +352,7 @@ export default function TypingTest() {
     setGhostTimeline(null);
     setGhostChallengerWpm(null);
     setGameMode('daily');
-    setActiveSnippet(synthesizeUnlimitedSnippet(selectedLang, 'medium', todayStr));
+    setActiveSnippet(getInstantUnseenSnippet(selectedLang, 'medium'));
   }, [selectedLang, todayStr]);
 
   const requestStreamChunk = useCallback((): string => {
@@ -388,7 +413,7 @@ export default function TypingTest() {
         localStorage.setItem('dt_last_lang', langId);
       } catch {}
       if (gameMode === 'daily') {
-        setActiveSnippet(synthesizeUnlimitedSnippet(langId, 'medium', todayStr));
+        setActiveSnippet(getInstantUnseenSnippet(langId, 'medium'));
       } else {
         rollRandomSnippet(langId, lengthMode);
       }
@@ -403,11 +428,11 @@ export default function TypingTest() {
       } else if (mode === 'smartcoach') {
         setGameMode('smartcoach');
         setActiveSnippet(
-          synthesizeSmartCoachSnippet(
+          getWeakSpotsSnippet(
             selectedLang,
+            lengthMode,
             cumulativeMissedKeys,
-            cumulativeWeakPatterns,
-            recentAvgWpm
+            cumulativeWeakPatterns
           )
         );
       } else {
@@ -417,9 +442,9 @@ export default function TypingTest() {
     [
       startDailyChallenge,
       selectedLang,
+      lengthMode,
       cumulativeMissedKeys,
       cumulativeWeakPatterns,
-      recentAvgWpm,
     ]
   );
 
@@ -458,21 +483,11 @@ export default function TypingTest() {
 
       const lastMsForTelemetry =
         stats.keystrokeLog.length > 0
-          ? stats.keystrokeLog[stats.keystrokeLog.length - 1].ms
-          : 15000;
+          ? Math.round(stats.keystrokeLog[stats.keystrokeLog.length - 1].ms)
+          : timeLimitSec > 0
+          ? timeLimitSec * 1000
+          : 0;
       const actualDurationSec = Math.max(1, Math.round(lastMsForTelemetry / 1000));
-
-      recordTypingSession({
-        language: currentLangSpec.name,
-        ext: `.${currentLangSpec.ext}`,
-        mode: gameMode,
-        length_tier: lengthMode,
-        wpm: Math.round(stats.wpm),
-        raw_wpm: Math.round(stats.rawWpm || stats.wpm),
-        accuracy: Number(stats.accuracy.toFixed(1)),
-        lines_typed: code.split('\n').length,
-        duration_seconds: actualDurationSec,
-      }).catch((err) => console.error('Telemetry error:', err));
 
       if (!stats.isFlaggedInvalid && stats.wpm > personalBest) {
         setPersonalBest(stats.wpm);
@@ -505,11 +520,10 @@ export default function TypingTest() {
         });
         try {
           localStorage.setItem('dt_weak_patterns', JSON.stringify(next));
+          localStorage.setItem('dt_mistakes_updated_at', String(Date.now()));
         } catch {}
         return next;
       });
-
-      const durationSec = actualDurationSec;
 
       const newEntry: HistoryRecord = {
         date: todayStr,
@@ -521,10 +535,9 @@ export default function TypingTest() {
         accuracy: stats.accuracy,
         syntaxAccuracy: stats.syntaxAccuracy,
         consistency: stats.consistency,
-        chars: code.length,
-        durationSec,
+        chars: currentIndex,
+        durationSec: actualDurationSec,
       };
-      setPendingSyncEntry(newEntry);
 
       if (!stats.isFlaggedInvalid) {
         try {
@@ -536,14 +549,28 @@ export default function TypingTest() {
         } catch {}
       }
 
+      const submissionPayload: SessionSubmissionInput = {
+        lang_id: selectedLang,
+        mode: gameMode,
+        tier: lengthMode,
+        wpm: Math.round(stats.wpm),
+        raw_wpm: Math.round(stats.rawWpm),
+        accuracy: Number(stats.accuracy.toFixed(2)),
+        consistency: Number(stats.consistency.toFixed(2)),
+        chars: Math.max(1, currentIndex),
+        duration_ms: lastMsForTelemetry,
+        seed: gameMode === 'daily' ? todayStr : null,
+      };
+      setPendingSyncEntry(submissionPayload);
+
       setCloudSyncStatus('syncing');
-      syncSessionToCloud(user, newEntry).then((res) => {
+      submitTypingSession(submissionPayload).then((res) => {
         if (res.ok) {
           setCloudSyncStatus('synced');
           setSyncError('');
         } else {
           setCloudSyncStatus('local');
-          setSyncError(res.error || 'Failed to sync to Supabase');
+          setSyncError(res.code ? `[${res.code}] ${res.error}` : res.error || 'Failed to save session');
         }
       });
     }
@@ -987,7 +1014,7 @@ export default function TypingTest() {
             <kbd className="px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-neutral-300">
               ⌘K
             </kbd>{' '}
-            56 Languages
+            {LANGUAGES.filter((l) => l.enabled).length} Languages
           </span>
           <span>
             <kbd className="px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-neutral-300">
