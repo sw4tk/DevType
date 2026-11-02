@@ -1,41 +1,23 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ErrorMode } from '@/constants/languages';
+import {
+  KeystrokeData,
+  ErrorBreakdown,
+  SessionStats,
+  EMPTY_ERROR_BREAKDOWN,
+  createEmptyStats,
+  classifyCharError,
+  calculateWpm,
+  calculateRawWpm,
+  calculateCpm,
+  calculateAccuracy,
+  calculateSyntaxAccuracy,
+  calculateConsistencyAndJitter,
+} from '@/lib/stats';
 
+export type { KeystrokeData, ErrorBreakdown, SessionStats };
 export type EngineStatus = 'idle' | 'typing' | 'finished';
-export type KeystrokeData = {
-  char: string;
-  expected: string;
-  index: number;
-  ms: number;
-  deltaMs: number;
-  isError: boolean;
-};
-
-export interface ErrorBreakdown {
-  brackets: number;
-  operators: number;
-  punctuation: number;
-  alphanumeric: number;
-}
-
-export interface SessionStats {
-  wpm: number;
-  rawWpm: number;
-  peakWpm: number;
-  accuracy: number;
-  syntaxAccuracy: number;
-  cpm: number;
-  consistency: number;
-  jitterMs: number;
-  streak: number;
-  maxStreak: number;
-  errorBreakdown: ErrorBreakdown;
-  missedKeys: Record<string, number>;
-  weakPatterns: Record<string, number>;
-  keystrokeLog: KeystrokeData[];
-  isFlaggedInvalid?: boolean;
-}
 
 export interface TelemetryPoint {
   ms: number;
@@ -44,28 +26,50 @@ export interface TelemetryPoint {
   errors: number;
 }
 
-const TRACKED_PATTERNS = ['=>', '===', '!==', '?.', '::', '->', '!=', '<=', '>=', '&&', '||', '()', '{}', '[]'];
-
-function classifyCharError(char: string): keyof ErrorBreakdown {
-  if ('(){}[]<>'.includes(char)) return 'brackets';
-  if ('+-*/=&|!^%~?:'.includes(char)) return 'operators';
-  if (';,.\'"`\\'.includes(char)) return 'punctuation';
-  return 'alphanumeric';
+export interface UseCodeTypingEngineOptions {
+  initialSnippet: string;
+  onKeystrokeFeedback?: (isError: boolean) => void;
+  pacemakerWpm?: number;
+  disabled?: boolean;
+  timeLimitSec?: number;
+  onRequestNextSnippet?: () => string;
+  suddenDeath?: boolean;
+  endlessMode?: boolean;
+  ghostTimestampsMs?: number[] | null;
+  errorMode?: ErrorMode;
+  autoPairEnabled?: boolean;
 }
 
-export function useCodeTypingEngine(
-  initialSnippet: string,
-  onKeystrokeFeedback?: (isError: boolean) => void,
-  pacemakerWpm: number = 0,
-  disabled: boolean = false,
-  timeLimitSec: number = 0,
-  onRequestNextSnippet?: () => string,
-  suddenDeath: boolean = false,
-  endlessMode: boolean = false,
-  ghostTimestampsMs?: number[] | null,
-  errorMode: ErrorMode = 'forgiving',
-  autoPairEnabled: boolean = true
-) {
+const TRACKED_PATTERNS = [
+  '=>',
+  '===',
+  '!==',
+  '?.',
+  '::',
+  '->',
+  '!=',
+  '<=',
+  '>=',
+  '&&',
+  '||',
+  '()',
+  '{}',
+  '[]',
+];
+
+export function useCodeTypingEngine({
+  initialSnippet,
+  onKeystrokeFeedback,
+  pacemakerWpm = 0,
+  disabled = false,
+  timeLimitSec = 0,
+  onRequestNextSnippet,
+  suddenDeath = false,
+  endlessMode = false,
+  ghostTimestampsMs = null,
+  errorMode = 'forgiving',
+  autoPairEnabled = true,
+}: UseCodeTypingEngineOptions) {
   const [code, setCode] = useState<string>(initialSnippet);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [ghostIndex, setGhostIndex] = useState<number>(0);
@@ -78,23 +82,7 @@ export function useCodeTypingEngine(
   const [capsLockOn, setCapsLockOn] = useState<boolean>(false);
   const [afkPausedWarning, setAfkPausedWarning] = useState<boolean>(false);
   const [history, setHistory] = useState<TelemetryPoint[]>([]);
-  const [liveStats, setLiveStats] = useState<SessionStats>({
-    wpm: 0,
-    rawWpm: 0,
-    peakWpm: 0,
-    accuracy: 100,
-    syntaxAccuracy: 100,
-    cpm: 0,
-    consistency: 100,
-    jitterMs: 0,
-    streak: 0,
-    maxStreak: 0,
-    errorBreakdown: { brackets: 0, operators: 0, punctuation: 0, alphanumeric: 0 },
-    missedKeys: {},
-    weakPatterns: {},
-    keystrokeLog: [],
-    isFlaggedInvalid: false,
-  });
+  const [liveStats, setLiveStats] = useState<SessionStats>(() => createEmptyStats());
 
   const baseSnippetRef = useRef<string>(initialSnippet);
   const codeRef = useRef<string>(initialSnippet);
@@ -127,82 +115,44 @@ export function useCodeTypingEngine(
   const nextSnippetGeneratorRef = useRef(onRequestNextSnippet);
   nextSnippetGeneratorRef.current = onRequestNextSnippet;
 
-  const errorBreakdownRef = useRef<ErrorBreakdown>({
-    brackets: 0,
-    operators: 0,
-    punctuation: 0,
-    alphanumeric: 0,
-  });
+  const errorBreakdownRef = useRef<ErrorBreakdown>({ ...EMPTY_ERROR_BREAKDOWN });
 
   const getEffectiveElapsedMs = useCallback(() => {
-    if (!startTimeRef.current) return 0;
-    return Math.max(250, Date.now() - startTimeRef.current - totalIdleDeductionMsRef.current);
+    if (startTimeRef.current === null) return 0;
+    return Math.max(
+      250,
+      performance.now() - startTimeRef.current - totalIdleDeductionMsRef.current
+    );
   }, []);
 
   const computeStatsSnapshot = useCallback((): SessionStats => {
-    if (!startTimeRef.current) {
+    if (startTimeRef.current === null) {
       return {
-        wpm: 0,
-        rawWpm: 0,
-        peakWpm: 0,
-        accuracy: 100,
-        syntaxAccuracy: 100,
-        cpm: 0,
-        consistency: 100,
-        jitterMs: 0,
+        ...createEmptyStats(),
         streak: streakRef.current,
         maxStreak: maxStreakRef.current,
         errorBreakdown: { ...errorBreakdownRef.current },
         missedKeys: { ...missedKeysRef.current },
         weakPatterns: { ...weakPatternsRef.current },
         keystrokeLog: [...keystrokesRef.current],
-        isFlaggedInvalid: false,
       };
     }
 
-    const elapsedMinutes = Math.max(getEffectiveElapsedMs() / 60000, 0.015);
+    const elapsedMs = getEffectiveElapsedMs();
     const totalTyped = keystrokesRef.current.length;
     const totalErrors = keystrokesRef.current.filter((k) => k.isError).length;
     const correctChars = Math.max(0, totalTyped - totalErrors);
 
-    const rawWpm = Math.min(350, Math.round(totalTyped / 5 / elapsedMinutes));
-    const wpm = Math.min(350, Math.max(0, Math.round(correctChars / 5 / elapsedMinutes)));
+    const rawWpm = calculateRawWpm(totalTyped, elapsedMs);
+    const wpm = calculateWpm(correctChars, elapsedMs);
     if (wpm > peakWpmRef.current && totalTyped >= 8) {
       peakWpmRef.current = wpm;
     }
 
-    const accuracy = totalTyped === 0 ? 100 : Math.round((correctChars / totalTyped) * 1000) / 10;
-    const cpm = Math.max(0, Math.round(correctChars / elapsedMinutes));
-
-    // Language-Aware Syntax Token Accuracy (Brackets + Operators + Punctuation)
-    const syntaxKeystrokes = keystrokesRef.current.filter(
-      (k) => classifyCharError(k.expected) !== 'alphanumeric'
-    );
-    const syntaxErrors = syntaxKeystrokes.filter((k) => k.isError).length;
-    const syntaxAccuracy =
-      syntaxKeystrokes.length === 0
-        ? 100
-        : Math.round(
-            ((syntaxKeystrokes.length - syntaxErrors) / syntaxKeystrokes.length) * 1000
-          ) / 10;
-
-    let consistency = 100;
-    let jitterMs = 0;
-    if (keystrokesRef.current.length > 4) {
-      const intervals = keystrokesRef.current
-        .map((k) => k.deltaMs)
-        .filter((d) => d > 15 && d < 1500);
-      if (intervals.length > 2) {
-        const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-        const variance =
-          intervals.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / intervals.length;
-        const stdDev = Math.sqrt(variance);
-        jitterMs = Math.round(stdDev);
-        const cv = mean > 0 ? stdDev / mean : 0;
-        consistency = Math.max(0, Math.min(100, Math.round((1 - cv * 0.45) * 100)));
-      }
-    }
-
+    const accuracy = calculateAccuracy(correctChars, totalTyped);
+    const cpm = calculateCpm(correctChars, elapsedMs);
+    const syntaxAccuracy = calculateSyntaxAccuracy(keystrokesRef.current);
+    const { consistency, jitterMs } = calculateConsistencyAndJitter(keystrokesRef.current);
     const isFlaggedInvalid = accuracy < 45 || wpm > 320;
 
     return {
@@ -227,7 +177,7 @@ export function useCodeTypingEngine(
   const finishNow = useCallback(() => {
     const finalStats = computeStatsSnapshot();
     setLiveStats(finalStats);
-    if (startTimeRef.current) {
+    if (startTimeRef.current !== null) {
       setHistory((h) => [
         ...h,
         {
@@ -247,7 +197,10 @@ export function useCodeTypingEngine(
     baseSnippetRef.current = targetCode;
     codeRef.current = targetCode;
     let firstNonSpace = 0;
-    while (firstNonSpace < targetCode.length && (targetCode[firstNonSpace] === ' ' || targetCode[firstNonSpace] === '\t')) {
+    while (
+      firstNonSpace < targetCode.length &&
+      (targetCode[firstNonSpace] === ' ' || targetCode[firstNonSpace] === '\t')
+    ) {
       firstNonSpace++;
     }
     indexRef.current = firstNonSpace;
@@ -262,7 +215,7 @@ export function useCodeTypingEngine(
     weakPatternsRef.current = {};
     streakRef.current = 0;
     maxStreakRef.current = 0;
-    errorBreakdownRef.current = { brackets: 0, operators: 0, punctuation: 0, alphanumeric: 0 };
+    errorBreakdownRef.current = { ...EMPTY_ERROR_BREAKDOWN };
 
     setCode(targetCode);
     setCurrentIndex(firstNonSpace);
@@ -275,23 +228,7 @@ export function useCodeTypingEngine(
     setLastKeyPressed('');
     setAfkPausedWarning(false);
     setHistory([]);
-    setLiveStats({
-      wpm: 0,
-      rawWpm: 0,
-      peakWpm: 0,
-      accuracy: 100,
-      syntaxAccuracy: 100,
-      cpm: 0,
-      consistency: 100,
-      jitterMs: 0,
-      streak: 0,
-      maxStreak: 0,
-      errorBreakdown: { brackets: 0, operators: 0, punctuation: 0, alphanumeric: 0 },
-      missedKeys: {},
-      weakPatterns: {},
-      keystrokeLog: [],
-      isFlaggedInvalid: false,
-    });
+    setLiveStats(createEmptyStats());
   }, []);
 
   useEffect(() => {
@@ -302,7 +239,7 @@ export function useCodeTypingEngine(
     if (status !== 'typing' || timeLimitSec <= 0) return;
 
     const timer = setInterval(() => {
-      if (!startTimeRef.current) return;
+      if (startTimeRef.current === null) return;
       const elapsedMs = getEffectiveElapsedMs();
       const remainingSec = Math.max(0, Math.ceil((timeLimitSec * 1000 - elapsedMs) / 1000));
       setTimeLeft(remainingSec);
@@ -352,8 +289,8 @@ export function useCodeTypingEngine(
     if (status !== 'typing') return;
 
     const interval = setInterval(() => {
-      if (!startTimeRef.current) return;
-      if (lastKeyTimeRef.current && Date.now() - lastKeyTimeRef.current > 3500) {
+      if (startTimeRef.current === null) return;
+      if (lastKeyTimeRef.current !== null && performance.now() - lastKeyTimeRef.current > 3500) {
         setAfkPausedWarning(true);
         return;
       }
@@ -402,7 +339,6 @@ export function useCodeTypingEngine(
         setCapsLockOn(e.getModifierState('CapsLock'));
       }
 
-      // Input-Device Resilience: Ignore IME composition & held-down key repeat
       if (e.isComposing || e.keyCode === 229) return;
       if (e.repeat && e.key !== 'Backspace') return;
 
@@ -447,14 +383,14 @@ export function useCodeTypingEngine(
       if (e.key.length > 1 && e.key !== 'Backspace' && e.key !== 'Enter') return;
       e.preventDefault();
 
-      const now = Date.now();
+      const now = performance.now();
       let deltaMs = 95;
       if (statusRef.current === 'idle') {
         startTimeRef.current = now;
         lastKeyTimeRef.current = now;
         statusRef.current = 'typing';
         setStatus('typing');
-      } else if (lastKeyTimeRef.current) {
+      } else if (lastKeyTimeRef.current !== null) {
         const gap = now - lastKeyTimeRef.current;
         deltaMs = gap;
         if (gap > 3500 && timeLimitRef.current === 0) {
@@ -478,7 +414,6 @@ export function useCodeTypingEngine(
       );
 
       if (e.key === 'Backspace') {
-        // Respect 'no-backspace' hardcore error policy
         if (errorModeRef.current === 'no-backspace') {
           feedbackRef.current?.(true);
           return;
@@ -500,7 +435,6 @@ export function useCodeTypingEngine(
 
       const expectedChar = activeCode[idx];
 
-      // Guard: If the line was already auto-indented (previous char is space/tab after \n) and user instinctively presses Space, ignore it instead of marking a false error!
       if (
         e.key === ' ' &&
         expectedChar !== ' ' &&
@@ -553,7 +487,6 @@ export function useCodeTypingEngine(
       const typedChar = e.key === 'Enter' ? '\n' : e.key;
       const isError = typedChar !== expectedChar;
 
-      // Track 2-char and 3-char syntax pattern weaknesses for AI Weakness Coach
       const twoCharWindow = activeCode.slice(Math.max(0, idx - 1), idx + 1);
       const twoCharAhead = activeCode.slice(idx, idx + 2);
       const threeCharAhead = activeCode.slice(idx, idx + 3);
@@ -579,7 +512,6 @@ export function useCodeTypingEngine(
             : expectedChar.toUpperCase();
         missedKeysRef.current[missedKeyLabel] = (missedKeysRef.current[missedKeyLabel] || 0) + 1;
 
-        // Check if error occurred on a multi-character operator pattern
         for (const pat of TRACKED_PATTERNS) {
           if (twoCharWindow === pat || twoCharAhead === pat || threeCharAhead === pat) {
             weakPatternsRef.current[pat] = (weakPatternsRef.current[pat] || 0) + 1;
@@ -596,7 +528,6 @@ export function useCodeTypingEngine(
           return;
         }
 
-        // Strict Error Mode: Do not advance cursor until the user types the correct character!
         if (errorModeRef.current === 'strict') {
           return;
         }
@@ -612,7 +543,6 @@ export function useCodeTypingEngine(
         }
         setStreak(streakRef.current);
 
-        // Also flag slow hesitation (>380ms) on tracked operator pairs
         if (deltaMs > 380 && TRACKED_PATTERNS.includes(twoCharWindow)) {
           weakPatternsRef.current[twoCharWindow] =
             (weakPatternsRef.current[twoCharWindow] || 0) + 1;
@@ -621,7 +551,6 @@ export function useCodeTypingEngine(
 
       let next = idx + 1;
 
-      // Always skip leading indentation spaces whenever we cross a newline (even if \n had a typo)
       if (expectedChar === '\n' || typedChar === '\n') {
         while (
           next < activeCode.length &&

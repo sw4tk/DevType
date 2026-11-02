@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#050507"/>
+  <circle cx="600" cy="315" r="400" fill="#10b981" opacity="0.1" filter="blur(80px)"/>
+  <text x="120" y="240" font-family="monospace" font-size="64" font-weight="bold" fill="#ffffff">Dev<tspan fill="#10b981">Type</tspan></text>
+  <text x="120" y="320" font-family="sans-serif" font-size="28" fill="#a3a3a3">Developer Typing Studio &amp; Real Open-Source Code Corpus</text>
+  <rect x="120" y="390" width="400" height="60" rx="12" fill="#0c0c10" stroke="#ffffff" stroke-opacity="0.15"/>
+  <text x="150" y="428" font-family="monospace" font-size="20" fill="#10b981">$ npm run devtype --typescript</text>
+</svg>

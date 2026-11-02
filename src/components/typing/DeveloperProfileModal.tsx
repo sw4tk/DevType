@@ -13,6 +13,7 @@ import {
   fetchSupabaseTableStats,
 } from '@/utils/supabaseClient';
 import { createSeededRandom } from '@/utils/codeSynthesizer';
+import { useDialog } from '@/hooks/useDialog';
 import {
   Trophy,
   Flame,
@@ -54,6 +55,7 @@ interface DeveloperProfileModalProps {
 type IdeTab = 'dossier' | 'socials' | 'mastery' | 'leaderboard' | 'commits' | 'cloud';
 
 export default function DeveloperProfileModal({
+  const dialogRef = useDialog({ isOpen, onClose });
   isOpen,
   onClose,
   user,
@@ -383,9 +385,15 @@ export default function DeveloperProfileModal({
 
   return (
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="profile-modal-title"
+      tabIndex={-1}
       style={{ backgroundColor: theme.bg }}
-      className="fixed inset-0 z-50 w-screen h-dvh max-h-dvh text-neutral-300 font-mono flex flex-col justify-between overflow-hidden select-none px-6 py-4"
+      className="fixed inset-0 z-50 w-screen h-dvh max-h-dvh text-neutral-300 font-mono flex flex-col justify-between overflow-hidden select-none px-6 py-4 focus:outline-none"
     >
+      <h2 id="profile-modal-title" className="sr-only">Developer Profile & Telemetry Dossier</h2>
       <div
         className="pointer-events-none absolute -top-44 left-1/2 -translate-x-1/2 w-[960px] h-[380px] blur-3xl opacity-90"
         style={{
@@ -474,6 +482,7 @@ export default function DeveloperProfileModal({
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={onClose}
+                  aria-label="Close workspace"
                   className="w-2.5 h-2.5 rounded-full bg-[#ff5f56] hover:opacity-80 cursor-pointer"
                   title="Close Workspace"
                 />

@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
+import { useDialog } from '@/hooks/useDialog';
 import {
   LANGUAGES,
   CaretShape,
@@ -78,6 +79,7 @@ const SMOOTHNESS_PRESETS: {
 ];
 
 export default function CommandPaletteModal({
+  const dialogRef = useDialog({ isOpen, onClose });
   isOpen,
   initialTab,
   onClose,
@@ -233,9 +235,15 @@ export default function CommandPaletteModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl bg-[#0c0c10] border border-white/15 rounded-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_25px_90px_rgba(0,0,0,0.95)] overflow-hidden"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="command-palette-title"
+        tabIndex={-1}
+        className="w-full max-w-3xl bg-[#0c0c10] border border-white/15 rounded-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_25px_90px_rgba(0,0,0,0.95)] overflow-hidden focus:outline-none"
         onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
       >
+      <h2 id="command-palette-title" className="sr-only">Command Palette & Studio Settings</h2>
         {/* Navigation Tabs */}
         <div className="flex flex-wrap items-center justify-between gap-1.5 px-4 py-3 border-b border-white/[0.08] bg-black/40">
           <div className="flex flex-wrap items-center gap-1">
@@ -308,6 +316,7 @@ export default function CommandPaletteModal({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close command palette"
             className="p-1 text-neutral-500 hover:text-white rounded-lg cursor-pointer"
           >
             <X className="w-4 h-4" />

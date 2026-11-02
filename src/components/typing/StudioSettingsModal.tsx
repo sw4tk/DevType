@@ -8,6 +8,7 @@ import {
 import { StudioTheme } from '@/constants/themes';
 import { UI_STYLES, UIStyleId } from '@/constants/uiStyles';
 import { SwitchProfile } from '@/hooks/useMechanicalAudio';
+import { useDialog } from '@/hooks/useDialog';
 import {
   ArrowLeft,
   Keyboard,
@@ -72,6 +73,7 @@ const FONT_SIZE_PRESETS = [
 ];
 
 export default function StudioSettingsModal({
+  const dialogRef = useDialog({ isOpen, onClose });
   isOpen,
   onClose,
   theme,
@@ -114,9 +116,15 @@ export default function StudioSettingsModal({
 
   return (
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-modal-title"
+      tabIndex={-1}
       style={{ backgroundColor: theme.bg }}
-      className="fixed inset-0 z-50 w-screen h-dvh max-h-dvh text-neutral-300 font-mono flex flex-col justify-between overflow-hidden select-none px-6 py-4"
+      className="fixed inset-0 z-50 w-screen h-dvh max-h-dvh text-neutral-300 font-mono flex flex-col justify-between overflow-hidden select-none px-6 py-4 focus:outline-none"
     >
+      <h2 id="settings-modal-title" className="sr-only">Studio Settings</h2>
       {/* Ambient Spotlight */}
       <div
         className="pointer-events-none absolute -top-44 left-1/2 -translate-x-1/2 w-[960px] h-[380px] blur-3xl opacity-90"
@@ -154,7 +162,7 @@ export default function StudioSettingsModal({
               onChangeCaretSmoothness('butter');
               onChangeCaretShape('block');
               onChangeErrorMode('forgiving');
-              onSelectUiStyle('glassmorphism');
+              onSelectUiStyle('bento_matte');
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs text-neutral-300 cursor-pointer"
           >
@@ -176,6 +184,27 @@ export default function StudioSettingsModal({
           />
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* CONSOLIDATED STUDIO STATUS STRIP (Glide, UI, Deck, Font) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-black/50 border border-white/10 text-xs">
+              <span className="text-neutral-400 font-semibold">Active Studio Configuration</span>
+              <div className="flex flex-wrap items-center gap-4">
+                <span>
+                  Glide: <strong className="text-white uppercase">{caretSmoothness}</strong>
+                </span>
+                <span>•</span>
+                <span>
+                  UI: <strong className="text-white uppercase">{uiStyleId}</strong>
+                </span>
+                <span>•</span>
+                <span>
+                  Deck: <strong className="text-white">{showKeyboard ? 'ON' : 'OFF'}</strong>
+                </span>
+                <span>•</span>
+                <span>
+                  Font: <strong className="text-white">{fontSize}px</strong>
+                </span>
+              </div>
+            </div>
             {/* SECTION 1: ON-SCREEN KEYBOARD & IDE FONT SIZE */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               {/* On-Screen 65% Mechanical Keyboard Toggle */}

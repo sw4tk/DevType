@@ -3,33 +3,26 @@ import { createClient } from '@/utils/supabase/client';
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useCodeTypingEngine } from '@/hooks/useCodeTypingEngine';
 import { useMechanicalAudio, SwitchProfile } from '@/hooks/useMechanicalAudio';
-import ResultsDashboard from '@/components/results/ResultsDashboard';
 import LiveKeyboardDeck from '@/components/typing/LiveKeyboardDeck';
 import StudioHeaderDock from '@/components/typing/StudioHeaderDock';
 import VimDojoArena from '@/components/typing/VimDojoArena';
 import IdeCodeViewport from '@/components/typing/IdeCodeViewport';
-import CommandPaletteModal, { ModalTab } from '@/components/typing/CommandPaletteModal';
-import DeveloperProfileModal from '@/components/typing/DeveloperProfileModal';
-import StudioSettingsModal from '@/components/typing/StudioSettingsModal';
-import { submitTypingSession } from '@/utils/telemetry';
-import { SessionSubmissionInput } from '@/utils/sessionValidation';
+import { ModalTab } from '@/components/typing/CommandPaletteModal';
+import StudioModalsHost from '@/components/typing/StudioModalsHost';
+import ResultsViewContainer from '@/components/typing/ResultsViewContainer';
+import { useSettingsStore } from '@/store/settings';
 import {
   LANGUAGES,
-  QUICK_LANGUAGES,
   SnippetItem,
   SnippetLength,
   GameMode,
-  ErrorMode,
-  CaretSmoothness,
-  CaretShape,
   HistoryRecord,
   DeveloperUser,
 } from '@/constants/languages';
 import { STUDIO_THEMES } from '@/constants/themes';
-import { UI_STYLES, UIStyleId } from '@/constants/uiStyles';
+import { UI_STYLES } from '@/constants/uiStyles';
 import {
   pick,
-  synthesizeUnlimitedSnippet,
   applyMistakeTimeDecay,
 } from '@/utils/codeSynthesizer';
 import {
@@ -40,19 +33,29 @@ import {
 import { Zap, Layers, Terminal, Loader2, Keyboard } from 'lucide-react';
 
 export default function TypingTest() {
-  const [isBooting, setIsBooting] = useState<boolean>(true);
-  const [bootStepText, setBootStepText] = useState<string>('Downloading user data & telemetry profile...');
+  const {
+    theme: themeId,
+    uiStyle: uiStyleId,
+    caretShape,
+    caretSmoothness,
+    errorMode,
+    fontSize,
+    showKeyboard,
+    lastLang: selectedLang,
+    setLastLang: setSelectedLang,
+    toggleShowKeyboard,
+    cycleTheme,
+    cycleUiStyle,
+    hydrateAndMigrateLegacy,
+  } = useSettingsStore();
 
-  const [selectedLang, setSelectedLang] = useState<string>('typescript');
+  const [isBooting, setIsBooting] = useState<boolean>(true);
+  const [bootStepText, setBootStepText] = useState<string>(
+    'Downloading user data & telemetry profile...'
+  );
+
   const [lengthMode, setLengthMode] = useState<SnippetLength>('medium');
   const [gameMode, setGameMode] = useState<GameMode>('standard');
-  const [errorMode, setErrorMode] = useState<ErrorMode>('forgiving');
-  const [uiStyleId, setUiStyleId] = useState<UIStyleId>('glassmorphism');
-
-  // New User-Configurable Layout & Typography Settings
-  const [showKeyboard, setShowKeyboard] = useState<boolean>(true);
-  const [fontSize, setFontSize] = useState(18);
-
   const [activeSnippet, setActiveSnippet] = useState<SnippetItem | null>(null);
 
   const [importedChunks, setImportedChunks] = useState<string[]>([]);
@@ -62,9 +65,6 @@ export default function TypingTest() {
   const [ghostChallengerWpm, setGhostChallengerWpm] = useState<number | null>(null);
 
   const [soundProfile, setSoundProfile] = useState<SwitchProfile>('thock');
-  const [themeId, setThemeId] = useState<string>('obsidian');
-  const [caretShape, setCaretShape] = useState<CaretShape>('block');
-  const [caretSmoothness, setCaretSmoothness] = useState<CaretSmoothness>('butter');
   const [velocityStretch, setVelocityStretch] = useState<boolean>(true);
   const [caretGlow, setCaretGlow] = useState<boolean>(true);
   const [focusZenDim, setFocusZenDim] = useState<boolean>(false);
@@ -81,31 +81,15 @@ export default function TypingTest() {
   const [sessionLogs, setSessionLogs] = useState<HistoryRecord[]>([]);
   const [cumulativeMissedKeys, setCumulativeMissedKeys] = useState<Record<string, number>>({});
   const [cumulativeWeakPatterns, setCumulativeWeakPatterns] = useState<Record<string, number>>({});
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'local' | 'syncing'>('local');
-  const [syncError, setSyncError] = useState<string>('');
-  const [pendingSyncEntry, setPendingSyncEntry] = useState<SessionSubmissionInput | null>(null);
-
-  const handleRetrySync = useCallback(() => {
-    if (!pendingSyncEntry) return;
-    setCloudSyncStatus('syncing');
-    submitTypingSession(pendingSyncEntry).then((res) => {
-      if (res.ok) {
-        setCloudSyncStatus('synced');
-        setSyncError('');
-      } else {
-        setCloudSyncStatus('local');
-        setSyncError(res.code ? `[${res.code}] ${res.error}` : res.error || 'Failed to save session');
-      }
-    });
-  }, [pendingSyncEntry]);
+  const [todayStr, setTodayStr] = useState<string>('2026-10-23');
+  const [lastRunSlowestKeys, setLastRunSlowestKeys] = useState<{ key: string; avgMs: number }[]>([]);
 
   const sparkTriggerRef = useRef<(() => void) | null>(null);
-  const hasRecordedRef = useRef<boolean>(false);
+
   const currentLangSpec = useMemo(
     () => LANGUAGES.find((l) => l.id === selectedLang) || LANGUAGES[0],
     [selectedLang]
   );
-  const [todayStr, setTodayStr] = useState<string>('2026-10-23');
 
   const theme = useMemo(
     () => STUDIO_THEMES.find((t) => t.id === themeId) || STUDIO_THEMES[0],
@@ -119,45 +103,34 @@ export default function TypingTest() {
 
   const { playKeystroke, ambientPlaying, toggleAmbientDrone } = useMechanicalAudio(soundProfile);
 
-  // Boot Loader Sequence: Downloads User Data + Fetches Guaranteed-Random Unseen Snippet
   useEffect(() => {
-    
     const initializeDevType = async () => {
+      hydrateAndMigrateLegacy();
       const currentIsoDate = new Date().toISOString().slice(0, 10);
       setTodayStr(currentIsoDate);
 
-      let initialLang = pick(QUICK_LANGUAGES);
-      try {
-        const savedLang = localStorage.getItem('dt_last_lang');
-        if (savedLang && LANGUAGES.some((l) => l.id === savedLang && l.enabled)) {
-          initialLang = savedLang;
-        }
+      const storeLang = useSettingsStore.getState().lastLang;
+      const initialLang = LANGUAGES.some((l) => l.id === storeLang && l.enabled)
+        ? storeLang
+        : 'typescript';
+      if (initialLang !== storeLang) {
         setSelectedLang(initialLang);
+      }
 
-        const savedSmooth = localStorage.getItem('dt_smoothness') as CaretSmoothness | null;
-        const savedShape = localStorage.getItem('dt_shape') as CaretShape | null;
-        const savedTheme = localStorage.getItem('dt_theme');
-        const savedUiStyle = localStorage.getItem('dt_ui_style') as UIStyleId | null;
-        const savedErrorMode = localStorage.getItem('dt_error_mode') as ErrorMode | null;
-        const savedShowKb = localStorage.getItem('dt_show_keyboard');
-        const savedFontSize = localStorage.getItem('dt_font_size');
+      try {
         const savedLogs = localStorage.getItem('dt_session_logs');
         const savedDaily = localStorage.getItem(`dt_daily_pb_${currentIsoDate}`);
         const savedUser = localStorage.getItem('dt_user_profile');
         const savedMisses = localStorage.getItem('dt_missed_keys');
         const savedPatterns = localStorage.getItem('dt_weak_patterns');
 
-        if (savedSmooth) setCaretSmoothness(savedSmooth);
-        if (savedShape) setCaretShape(savedShape);
-        if (savedTheme) setThemeId(savedTheme);
-        if (savedUiStyle && UI_STYLES.some((s) => s.id === savedUiStyle)) setUiStyleId(savedUiStyle);
-        if (savedErrorMode) setErrorMode(savedErrorMode);
-        if (savedShowKb !== null) setShowKeyboard(savedShowKb === 'true');
-        if (savedFontSize) setFontSize(parseInt(savedFontSize, 10) || 15);
         if (savedLogs) setSessionLogs(JSON.parse(savedLogs));
         if (savedDaily) setDailyBestWpm(parseInt(savedDaily, 10));
+
         const supabase = createClient();
-        const { data: { user: realAuthUser } } = await supabase.auth.getUser();
+        const {
+          data: { user: realAuthUser },
+        } = await supabase.auth.getUser();
         if (realAuthUser) {
           const savedParsed = savedUser ? JSON.parse(savedUser) : null;
           const handle =
@@ -170,8 +143,7 @@ export default function TypingTest() {
             username: handle,
             email: realAuthUser.email || `${handle}@github.user`,
             avatarUrl:
-              realAuthUser.user_metadata?.avatar_url ||
-              `https://github.com/${handle}.png`,
+              realAuthUser.user_metadata?.avatar_url || `https://github.com/${handle}.png`,
             githubHandle: handle,
             title: savedParsed?.title || 'Full-Stack Systems Engineer',
             isCloudSynced: true,
@@ -188,6 +160,7 @@ export default function TypingTest() {
           localStorage.removeItem('dt_user_profile');
           setUser(null);
         }
+
         const savedMistakesTsRaw = localStorage.getItem('dt_mistakes_updated_at');
         const savedMistakesTs = savedMistakesTsRaw ? parseInt(savedMistakesTsRaw, 10) : null;
         const nowMs = Date.now();
@@ -195,7 +168,11 @@ export default function TypingTest() {
 
         if (savedMisses) {
           const parsedMisses = JSON.parse(savedMisses) as Record<string, number>;
-          const { decayed, didDecay } = applyMistakeTimeDecay(parsedMisses, savedMistakesTs, nowMs);
+          const { decayed, didDecay } = applyMistakeTimeDecay(
+            parsedMisses,
+            savedMistakesTs,
+            nowMs
+          );
           setCumulativeMissedKeys(decayed);
           if (didDecay) {
             localStorage.setItem('dt_missed_keys', JSON.stringify(decayed));
@@ -204,7 +181,11 @@ export default function TypingTest() {
         }
         if (savedPatterns) {
           const parsedPatterns = JSON.parse(savedPatterns) as Record<string, number>;
-          const { decayed, didDecay } = applyMistakeTimeDecay(parsedPatterns, savedMistakesTs, nowMs);
+          const { decayed, didDecay } = applyMistakeTimeDecay(
+            parsedPatterns,
+            savedMistakesTs,
+            nowMs
+          );
           setCumulativeWeakPatterns(decayed);
           if (didDecay) {
             localStorage.setItem('dt_weak_patterns', JSON.stringify(decayed));
@@ -241,7 +222,7 @@ export default function TypingTest() {
         } catch {}
       }
 
-      setBootStepText('Synthesizing non-repeating code snippet from cloud corpus...');
+      setBootStepText('Loading code snippet from local corpus...');
       let freshSnippet = await getNextCorpusSnippet(initialLang, 'medium');
       if (!freshSnippet) {
         freshSnippet = getInstantUnseenSnippet(initialLang, 'medium');
@@ -254,7 +235,9 @@ export default function TypingTest() {
     initializeDevType();
 
     const supabase = createClient();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       const authUser = session?.user;
       if (authUser) {
         const handle =
@@ -268,8 +251,7 @@ export default function TypingTest() {
             username: handle,
             email: authUser.email || `${handle}@github.user`,
             avatarUrl:
-              authUser.user_metadata?.avatar_url ||
-              `https://github.com/${handle}.png`,
+              authUser.user_metadata?.avatar_url || `https://github.com/${handle}.png`,
             githubHandle: handle,
             title: prev?.title || 'Full-Stack Systems Engineer',
             isCloudSynced: true,
@@ -294,13 +276,7 @@ export default function TypingTest() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
-
-  const recentAvgWpm = useMemo(() => {
-    if (sessionLogs.length === 0) return 60;
-    const recent = sessionLogs.slice(-10);
-    return Math.round(recent.reduce((a, r) => a + r.wpm, 0) / recent.length);
-  }, [sessionLogs]);
+  }, [hydrateAndMigrateLegacy, setSelectedLang]);
 
   const rollRandomSnippet = useCallback(
     (targetLang: string = selectedLang, targetLen: SnippetLength = lengthMode) => {
@@ -344,7 +320,6 @@ export default function TypingTest() {
       gameMode,
       cumulativeMissedKeys,
       cumulativeWeakPatterns,
-      recentAvgWpm,
     ]
   );
 
@@ -353,7 +328,7 @@ export default function TypingTest() {
     setGhostChallengerWpm(null);
     setGameMode('daily');
     setActiveSnippet(getInstantUnseenSnippet(selectedLang, 'medium'));
-  }, [selectedLang, todayStr]);
+  }, [selectedLang]);
 
   const requestStreamChunk = useCallback((): string => {
     if (selectedLang === 'custom' && importedChunks.length > 0) {
@@ -393,32 +368,29 @@ export default function TypingTest() {
     history,
     resetEngine,
     finishNow,
-  } = useCodeTypingEngine(
-    activeSnippet?.code || 'export const ready = true;',
-    handleKeystrokeFeedback,
+  } = useCodeTypingEngine({
+    initialSnippet: activeSnippet?.code || 'export const ready = true;',
+    onKeystrokeFeedback: handleKeystrokeFeedback,
     pacemakerWpm,
-    paletteOpen || profileModalOpen || settingsModalOpen || isVimMode || isBooting,
+    disabled: paletteOpen || profileModalOpen || settingsModalOpen || isVimMode || isBooting,
     timeLimitSec,
-    requestStreamChunk,
-    isSuddenDeath,
-    isZenMode,
-    ghostTimeline,
-    errorMode
-  );
+    onRequestNextSnippet: requestStreamChunk,
+    suddenDeath: isSuddenDeath,
+    endlessMode: isZenMode,
+    ghostTimestampsMs: ghostTimeline,
+    errorMode,
+  });
 
   const handleSelectLanguage = useCallback(
     (langId: string) => {
       setSelectedLang(langId);
-      try {
-        localStorage.setItem('dt_last_lang', langId);
-      } catch {}
       if (gameMode === 'daily') {
         setActiveSnippet(getInstantUnseenSnippet(langId, 'medium'));
       } else {
         rollRandomSnippet(langId, lengthMode);
       }
     },
-    [gameMode, lengthMode, rollRandomSnippet, todayStr]
+    [setSelectedLang, gameMode, lengthMode, rollRandomSnippet]
   );
 
   const handleSelectGameMode = useCallback(
@@ -458,135 +430,6 @@ export default function TypingTest() {
   }, [selectedLang, gameMode]);
 
   useEffect(() => {
-    if (status !== 'finished') {
-      hasRecordedRef.current = false;
-      return;
-    }
-    if (hasRecordedRef.current) return;
-    hasRecordedRef.current = true;
-
-    if (!user) {
-      setCloudSyncStatus('local');
-      setSyncError('🔒 Guest Mode: Sign in to save your test results.');
-      setPendingSyncEntry(null);
-      return;
-    }
-
-    if (status === 'finished') {
-      // Guest Mode: Allow testing & ResultsDashboard, but skip all data saving if not logged in
-      if (!user) {
-        setCloudSyncStatus('local');
-        setSyncError('');
-        setPendingSyncEntry(null);
-        return;
-      }
-
-      const lastMsForTelemetry =
-        stats.keystrokeLog.length > 0
-          ? Math.round(stats.keystrokeLog[stats.keystrokeLog.length - 1].ms)
-          : timeLimitSec > 0
-          ? timeLimitSec * 1000
-          : 0;
-      const actualDurationSec = Math.max(1, Math.round(lastMsForTelemetry / 1000));
-
-      if (!stats.isFlaggedInvalid && stats.wpm > personalBest) {
-        setPersonalBest(stats.wpm);
-        try {
-          localStorage.setItem(`devtype_pb_${selectedLang}_${gameMode}`, String(stats.wpm));
-        } catch {}
-      }
-      if (!stats.isFlaggedInvalid && gameMode === 'daily' && stats.wpm > dailyBestWpm) {
-        setDailyBestWpm(stats.wpm);
-        try {
-          localStorage.setItem(`dt_daily_pb_${todayStr}`, String(stats.wpm));
-        } catch {}
-      }
-
-      setCumulativeMissedKeys((prev) => {
-        const next = { ...prev };
-        Object.entries(stats.missedKeys).forEach(([k, v]) => {
-          next[k] = (next[k] || 0) + v;
-        });
-        try {
-          localStorage.setItem('dt_missed_keys', JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-
-      setCumulativeWeakPatterns((prev) => {
-        const next = { ...prev };
-        Object.entries(stats.weakPatterns || {}).forEach(([k, v]) => {
-          next[k] = (next[k] || 0) + v;
-        });
-        try {
-          localStorage.setItem('dt_weak_patterns', JSON.stringify(next));
-          localStorage.setItem('dt_mistakes_updated_at', String(Date.now()));
-        } catch {}
-        return next;
-      });
-
-      const newEntry: HistoryRecord = {
-        date: todayStr,
-        timestamp: Date.now(),
-        langId: selectedLang,
-        gameMode,
-        wpm: stats.wpm,
-        rawWpm: stats.rawWpm,
-        accuracy: stats.accuracy,
-        syntaxAccuracy: stats.syntaxAccuracy,
-        consistency: stats.consistency,
-        chars: currentIndex,
-        durationSec: actualDurationSec,
-      };
-
-      if (!stats.isFlaggedInvalid) {
-        try {
-          setSessionLogs((prev) => {
-            const updated = [...prev.slice(-399), newEntry];
-            localStorage.setItem('dt_session_logs', JSON.stringify(updated));
-            return updated;
-          });
-        } catch {}
-      }
-
-      const submissionPayload: SessionSubmissionInput = {
-        lang_id: selectedLang,
-        mode: gameMode,
-        tier: lengthMode,
-        wpm: Math.round(stats.wpm),
-        raw_wpm: Math.round(stats.rawWpm),
-        accuracy: Number(stats.accuracy.toFixed(2)),
-        consistency: Number(stats.consistency.toFixed(2)),
-        chars: Math.max(1, currentIndex),
-        duration_ms: lastMsForTelemetry,
-        seed: gameMode === 'daily' ? todayStr : null,
-      };
-      setPendingSyncEntry(submissionPayload);
-
-      setCloudSyncStatus('syncing');
-      submitTypingSession(submissionPayload).then((res) => {
-        if (res.ok) {
-          setCloudSyncStatus('synced');
-          setSyncError('');
-        } else {
-          setCloudSyncStatus('local');
-          setSyncError(res.code ? `[${res.code}] ${res.error}` : res.error || 'Failed to save session');
-        }
-      });
-    }
-  }, [
-    status,
-    stats,
-    personalBest,
-    dailyBestWpm,
-    selectedLang,
-    gameMode,
-    todayStr,
-    code.length,
-    user,
-  ]);
-
-  useEffect(() => {
     const onGlobalKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -604,7 +447,6 @@ export default function TypingTest() {
     return () => window.removeEventListener('keydown', onGlobalKey);
   }, [rollRandomSnippet]);
 
-  // Terminal Boot Loader Screen
   if (isBooting || !activeSnippet) {
     return (
       <div
@@ -616,7 +458,7 @@ export default function TypingTest() {
             <div className="flex items-center gap-2">
               <Terminal className="w-4 h-4 animate-pulse" style={{ color: theme.accent }} />
               <span className="text-xs font-extrabold text-white tracking-wider uppercase">
-                DevType // Cloud Boot
+                DevType // Studio Boot
               </span>
             </div>
             <span className="text-[10px] text-neutral-500">v2.5</span>
@@ -640,19 +482,87 @@ export default function TypingTest() {
 
   if (status === 'finished') {
     return (
-      <ResultsDashboard
-        isGuest={!user}
-        onRetrySync={handleRetrySync}
-        stats={{ ...stats, maxStreak }}
+      <ResultsViewContainer
+        user={user}
+        stats={stats}
+        maxStreak={maxStreak}
         history={history}
         code={code}
-        languageLabel={activeSnippet.label}
-        filename={activeSnippet.filename}
+        currentIndex={currentIndex}
+        timeLimitSec={timeLimitSec}
+        activeSnippet={activeSnippet}
+        selectedLang={selectedLang}
+        gameMode={gameMode}
+        lengthMode={lengthMode}
+        todayStr={todayStr}
         personalBest={personalBest}
+        onUpdatePersonalBest={(pb) => {
+          setPersonalBest(pb);
+          try {
+            localStorage.setItem(`devtype_pb_${selectedLang}_${gameMode}`, String(pb));
+          } catch {}
+        }}
+        dailyBestWpm={dailyBestWpm}
+        onUpdateDailyBestWpm={(pb) => {
+          setDailyBestWpm(pb);
+          try {
+            localStorage.setItem(`dt_daily_pb_${todayStr}`, String(pb));
+          } catch {}
+        }}
         sessionLogs={sessionLogs}
+        onAppendSessionLog={(newEntry) => {
+          try {
+            setSessionLogs((prev) => {
+              const updated = [...prev.slice(-399), newEntry];
+              localStorage.setItem('dt_session_logs', JSON.stringify(updated));
+              return updated;
+            });
+          } catch {}
+        }}
+        onRecordMistakes={(missedKeys, weakPatterns) => {
+          if (stats.keystrokeLog && stats.keystrokeLog.length > 0) {
+            const sums = new Map<string, { totalMs: number; count: number }>();
+            for (const ks of stats.keystrokeLog) {
+              if (ks.deltaMs <= 15 || ks.deltaMs >= 2500) continue;
+              const label =
+                ks.expected === '\n'
+                  ? 'Enter'
+                  : ks.expected === ' '
+                  ? 'Space'
+                  : ks.expected;
+              const prev = sums.get(label) || { totalMs: 0, count: 0 };
+              sums.set(label, { totalMs: prev.totalMs + ks.deltaMs, count: prev.count + 1 });
+            }
+            const slowest = Array.from(sums.entries())
+              .map(([key, v]) => ({ key, avgMs: Math.round(v.totalMs / v.count) }))
+              .sort((a, b) => b.avgMs - a.avgMs)
+              .slice(0, 3);
+            setLastRunSlowestKeys(slowest);
+          }
+          setCumulativeMissedKeys((prev) => {
+            const next = { ...prev };
+            Object.entries(missedKeys).forEach(([k, v]) => {
+              next[k] = (next[k] || 0) + v;
+            });
+            try {
+              localStorage.setItem('dt_missed_keys', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+
+          setCumulativeWeakPatterns((prev) => {
+            const next = { ...prev };
+            Object.entries(weakPatterns).forEach(([k, v]) => {
+              next[k] = (next[k] || 0) + v;
+            });
+            try {
+              localStorage.setItem('dt_weak_patterns', JSON.stringify(next));
+              localStorage.setItem('dt_mistakes_updated_at', String(Date.now()));
+            } catch {}
+            return next;
+          });
+        }}
         ghostChallengerWpm={ghostChallengerWpm}
-        cloudSyncStatus={cloudSyncStatus}
-        syncError={syncError}
         theme={theme}
         onRestart={() => resetEngine()}
         onNextRandom={() => {
@@ -688,92 +598,17 @@ export default function TypingTest() {
       }
       className="relative w-screen h-dvh max-h-dvh text-neutral-300 font-mono flex flex-col justify-between overflow-hidden select-none transition-colors duration-300 px-6 py-4"
     >
-      {/* Dedicated Full-Page Studio Settings View */}
-      <StudioSettingsModal
-        isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
+      <StudioModalsHost
         theme={theme}
-        uiStyleId={uiStyleId}
-        onSelectUiStyle={(styleId) => {
-          setUiStyleId(styleId);
-          try {
-            localStorage.setItem('dt_ui_style', styleId);
-          } catch {}
-        }}
-        showKeyboard={showKeyboard}
-        onChangeShowKeyboard={(val) => {
-          setShowKeyboard(val);
-          try {
-            localStorage.setItem('dt_show_keyboard', String(val));
-          } catch {}
-        }}
-        fontSize={fontSize}
-        onChangeFontSize={(sz) => {
-          setFontSize(sz);
-          try {
-            localStorage.setItem('dt_font_size', String(sz));
-          } catch {}
-        }}
-        caretSmoothness={caretSmoothness}
-        onChangeCaretSmoothness={(val) => {
-          setCaretSmoothness(val);
-          try {
-            localStorage.setItem('dt_smoothness', val);
-          } catch {}
-        }}
-        caretShape={caretShape}
-        onChangeCaretShape={(val) => {
-          setCaretShape(val);
-          try {
-            localStorage.setItem('dt_shape', val);
-          } catch {}
-        }}
-        errorMode={errorMode}
-        onChangeErrorMode={(em) => {
-          setErrorMode(em);
-          try {
-            localStorage.setItem('dt_error_mode', em);
-          } catch {}
-        }}
-        velocityStretch={velocityStretch}
-        onChangeVelocityStretch={setVelocityStretch}
-        caretGlow={caretGlow}
-        onChangeCaretGlow={setCaretGlow}
-        focusZenDim={focusZenDim}
-        onChangeFocusZenDim={setFocusZenDim}
-        pacemakerWpm={pacemakerWpm}
-        onChangePacemaker={setPacemakerWpm}
-        soundProfile={soundProfile}
-        onChangeSoundProfile={setSoundProfile}
-      />
-
-      <CommandPaletteModal
-        isOpen={paletteOpen}
-        initialTab={paletteTab}
-        onClose={() => setPaletteOpen(false)}
+        settingsModalOpen={settingsModalOpen}
+        onCloseSettingsModal={() => setSettingsModalOpen(false)}
+        paletteOpen={paletteOpen}
+        paletteTab={paletteTab}
+        onClosePalette={() => setPaletteOpen(false)}
+        profileModalOpen={profileModalOpen}
+        onCloseProfileModal={() => setProfileModalOpen(false)}
         selectedLang={selectedLang}
         onSelectLanguage={handleSelectLanguage}
-        selectedThemeId={themeId}
-        onSelectTheme={(id) => {
-          setThemeId(id);
-          try {
-            localStorage.setItem('dt_theme', id);
-          } catch {}
-        }}
-        uiStyleId={uiStyleId}
-        onSelectUiStyle={(styleId) => {
-          setUiStyleId(styleId);
-          try {
-            localStorage.setItem('dt_ui_style', styleId);
-          } catch {}
-        }}
-        errorMode={errorMode}
-        onChangeErrorMode={(em) => {
-          setErrorMode(em);
-          try {
-            localStorage.setItem('dt_error_mode', em);
-          } catch {}
-        }}
         onTriggerRandom={() => rollRandomSnippet()}
         onStartDailyChallenge={startDailyChallenge}
         onSubmitCustomChunks={(title, chunks, badge) => {
@@ -789,20 +624,6 @@ export default function TypingTest() {
             code: chunks[0],
           });
         }}
-        currentCaretShape={caretShape}
-        onChangeCaretShape={(val) => {
-          setCaretShape(val);
-          try {
-            localStorage.setItem('dt_shape', val);
-          } catch {}
-        }}
-        caretSmoothness={caretSmoothness}
-        onChangeCaretSmoothness={(val) => {
-          setCaretSmoothness(val);
-          try {
-            localStorage.setItem('dt_smoothness', val);
-          } catch {}
-        }}
         velocityStretch={velocityStretch}
         onChangeVelocityStretch={setVelocityStretch}
         caretGlow={caretGlow}
@@ -811,33 +632,13 @@ export default function TypingTest() {
         onChangeFocusZenDim={setFocusZenDim}
         pacemakerWpm={pacemakerWpm}
         onChangePacemaker={setPacemakerWpm}
+        soundProfile={soundProfile}
+        onChangeSoundProfile={setSoundProfile}
+        user={user}
+        onChangeUser={setUser}
         sessionLogs={sessionLogs}
         todayStr={todayStr}
         dailyBestWpm={dailyBestWpm}
-      />
-
-      <DeveloperProfileModal
-        isOpen={profileModalOpen}
-        onClose={() => setProfileModalOpen(false)}
-        user={user}
-        onLoginUser={(u) => {
-          setUser(u);
-          try {
-            localStorage.setItem('dt_user_profile', JSON.stringify(u));
-          } catch {}
-        }}
-        onLogoutUser={async () => {
-          try {
-            const supabase = createClient();
-            await supabase.auth.signOut();
-            localStorage.removeItem('dt_user_profile');
-          } catch {}
-          setUser(null);
-        }}
-        sessionLogs={sessionLogs}
-        todayStr={todayStr}
-        accentColor={theme.accent}
-        theme={theme}
       />
 
       {/* Ambient Spotlight + Dot Matrix */}
@@ -858,61 +659,41 @@ export default function TypingTest() {
         }}
       />
 
-      <div className="relative z-20 w-full animate-studio-dock"><StudioHeaderDock
-        theme={theme}
-        uiStyle={uiStyle}
-        dimChrome={dimChrome}
-        currentLangSpec={currentLangSpec}
-        lengthMode={lengthMode}
-        gameMode={gameMode}
-        soundProfile={soundProfile}
-        caretSmoothness={caretSmoothness}
-        ambientPlaying={ambientPlaying}
-        showKeyboard={showKeyboard}
-        user={user}
-        onOpenPaletteTab={(tab) => {
-          setPaletteTab(tab);
-          setPaletteOpen(true);
-        }}
-        onOpenSettingsPage={() => setSettingsModalOpen(true)}
-        onToggleKeyboard={() => {
-          setShowKeyboard((prev) => {
-            const next = !prev;
-            try {
-              localStorage.setItem('dt_show_keyboard', String(next));
-            } catch {}
-            return next;
-          });
-        }}
-        onSelectLength={(len) => {
-          setLengthMode(len);
-          rollRandomSnippet(selectedLang, len);
-        }}
-        onSelectGameMode={handleSelectGameMode}
-        onRollRandom={() => rollRandomSnippet()}
-        onToggleAmbient={toggleAmbientDrone}
-        onCycleTheme={() => {
-          const idx = STUDIO_THEMES.findIndex((t) => t.id === themeId);
-          const next = STUDIO_THEMES[(idx + 1) % STUDIO_THEMES.length];
-          setThemeId(next.id);
-          try {
-            localStorage.setItem('dt_theme', next.id);
-          } catch {}
-        }}
-        onCycleUiStyle={() => {
-          const idx = UI_STYLES.findIndex((s) => s.id === uiStyleId);
-          const next = UI_STYLES[(idx + 1) % UI_STYLES.length];
-          setUiStyleId(next.id);
-          try {
-            localStorage.setItem('dt_ui_style', next.id);
-          } catch {}
-        }}
-        onCycleSound={() => {
-          const order: SwitchProfile[] = ['thock', 'clack', 'click', 'off'];
-          setSoundProfile(order[(order.indexOf(soundProfile) + 1) % order.length]);
-        }}
-        onOpenProfile={() => setProfileModalOpen(true)}
-      /></div>
+      <div className="relative z-20 w-full animate-studio-dock">
+        <StudioHeaderDock
+          theme={theme}
+          uiStyle={uiStyle}
+          dimChrome={dimChrome}
+          currentLangSpec={currentLangSpec}
+          lengthMode={lengthMode}
+          gameMode={gameMode}
+          soundProfile={soundProfile}
+          caretSmoothness={caretSmoothness}
+          ambientPlaying={ambientPlaying}
+          showKeyboard={showKeyboard}
+          user={user}
+          onOpenPaletteTab={(tab) => {
+            setPaletteTab(tab);
+            setPaletteOpen(true);
+          }}
+          onOpenSettingsPage={() => setSettingsModalOpen(true)}
+          onToggleKeyboard={toggleShowKeyboard}
+          onSelectLength={(len) => {
+            setLengthMode(len);
+            rollRandomSnippet(selectedLang, len);
+          }}
+          onSelectGameMode={handleSelectGameMode}
+          onRollRandom={() => rollRandomSnippet()}
+          onToggleAmbient={toggleAmbientDrone}
+          onCycleTheme={cycleTheme}
+          onCycleUiStyle={cycleUiStyle}
+          onCycleSound={() => {
+            const order: SwitchProfile[] = ['thock', 'clack', 'click', 'off'];
+            setSoundProfile(order[(order.indexOf(soundProfile) + 1) % order.length]);
+          }}
+          onOpenProfile={() => setProfileModalOpen(true)}
+        />
+      </div>
 
       <main className="relative z-10 w-full max-w-7xl mx-auto flex-1 min-h-0 flex flex-col justify-center gap-3.5 py-2 animate-studio-ide">
         {isVimMode ? (
@@ -922,6 +703,7 @@ export default function TypingTest() {
             onPlayKeystroke={playKeystroke}
           />
         ) : (
+          <>
           <IdeCodeViewport
             code={code}
             activeSnippet={activeSnippet}
@@ -954,6 +736,20 @@ export default function TypingTest() {
             onOpenProfile={() => setProfileModalOpen(true)}
             onResetEngine={() => resetEngine()}
           />
+          {lengthMode === 'short' && lastRunSlowestKeys.length > 0 && (
+            <div className="flex items-center justify-center gap-3 text-[11px] text-neutral-400 px-3 py-1">
+              <span className="text-neutral-500">Slowest keys (previous run):</span>
+              {lastRunSlowestKeys.map((item) => (
+                <span
+                  key={item.key}
+                  className="px-2 py-0.5 rounded bg-white/[0.04] border border-white/10 text-neutral-200 font-mono"
+                >
+                  <strong style={{ color: theme.accent }}>{item.key}</strong> {item.avgMs}ms
+                </span>
+              ))}
+            </div>
+          )}
+          </>
         )}
 
         {showKeyboard && (
@@ -973,56 +769,11 @@ export default function TypingTest() {
       </main>
 
       <footer
-        className={`relative z-10 w-full max-w-7xl mx-auto shrink-0 flex items-center justify-between text-[11px] text-neutral-500 pl-28 pr-2 py-1 animate-studio-footer transition-opacity duration-300 ${
+        className={`relative z-10 w-full max-w-7xl mx-auto shrink-0 flex items-center justify-center text-[11px] text-neutral-400 py-1 animate-studio-footer transition-opacity duration-300 ${
           dimChrome ? 'opacity-15' : 'opacity-100'
         }`}
       >
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5">
-            <Zap className="w-3 h-3" style={{ color: theme.accent }} />
-            Glide: <strong className="text-neutral-300 uppercase">{caretSmoothness}</strong>
-          </span>
-          <span>•</span>
-          <button
-            onClick={() => setSettingsModalOpen(true)}
-            className="flex items-center gap-1 hover:text-white cursor-pointer"
-          >
-            <Layers className="w-3 h-3" style={{ color: theme.accent }} />
-            UI: <strong className="text-neutral-300 uppercase">{uiStyle.name}</strong>
-          </button>
-          <span>•</span>
-          <button
-            onClick={() => setShowKeyboard((k) => !k)}
-            className="flex items-center gap-1 hover:text-white cursor-pointer"
-          >
-            <Keyboard className="w-3 h-3" style={{ color: theme.accent }} />
-            Deck: <strong className="text-neutral-300">{showKeyboard ? 'ON' : 'OFF'}</strong>
-          </button>
-          <span>•</span>
-          <span>
-            Font: <strong className="text-neutral-300">{fontSize}px</strong>
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span>
-            <kbd className="px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-neutral-300">
-              Ctrl+,
-            </kbd>{' '}
-            Studio Settings
-          </span>
-          <span>
-            <kbd className="px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-neutral-300">
-              ⌘K
-            </kbd>{' '}
-            {LANGUAGES.filter((l) => l.enabled).length} Languages
-          </span>
-          <span>
-            <kbd className="px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-neutral-300">
-              Alt+N
-            </kbd>{' '}
-            Shuffle Unseen
-          </span>
-        </div>
+        <span>Esc restart · Tab skip indent · Ctrl+K commands</span>
       </footer>
     </div>
   );

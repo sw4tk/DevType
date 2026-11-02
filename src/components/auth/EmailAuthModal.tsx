@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { createClient } from '@/utils/supabase/client';
+import { useDialog } from '@/hooks/useDialog';
 import { Mail, Lock, X, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface EmailAuthModalProps {
@@ -11,6 +12,7 @@ interface EmailAuthModalProps {
 }
 
 export default function EmailAuthModal({ isOpen, onClose }: EmailAuthModalProps) {
+  const dialogRef = useDialog({ isOpen, onClose });
   const [mounted, setMounted] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -91,12 +93,19 @@ export default function EmailAuthModal({ isOpen, onClose }: EmailAuthModalProps)
       className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-studio-enter"
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="email-auth-title"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-white/15 bg-[#0b0d13] p-6 shadow-[0_25px_70px_rgba(0,0,0,0.95)] relative space-y-5 font-mono"
+        className="w-full max-w-md rounded-2xl border border-white/15 bg-[#0b0d13] p-6 shadow-[0_25px_70px_rgba(0,0,0,0.95)] relative space-y-5 font-mono focus:outline-none"
       >
+        <h2 id="email-auth-title" className="sr-only">Email Authentication</h2>
         <button
           type="button"
           onClick={onClose}
+          aria-label="Close authentication modal"
           className="absolute top-4 right-4 text-neutral-400 hover:text-white transition-colors p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] cursor-pointer"
         >
           <X className="w-4 h-4" />

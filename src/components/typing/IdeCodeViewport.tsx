@@ -31,7 +31,43 @@ import {
   RotateCcw,
   GitBranch,
   CheckCircle2,
+  AlertTriangle,
+  XCircle,
 } from 'lucide-react';
+
+export function detectSnippetIndentation(code: string): string {
+  const lines = code.split('\n');
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (line.startsWith('\t')) {
+      return 'Tabs';
+    }
+    const match = line.match(/^( +)\S/);
+    if (match) {
+      return `Spaces: ${match[1].length}`;
+    }
+  }
+  return 'Spaces: 0';
+}
+
+export function formatStatusBarMode(gameMode: GameMode): string {
+  switch (gameMode) {
+    case 'standard':
+      return 'sprint';
+    case '15':
+      return '15s';
+    case '30':
+      return '30s';
+    case '60':
+      return '60s';
+    case 'suddendeath':
+      return '1hp';
+    case 'smartcoach':
+      return 'weak spots';
+    default:
+      return gameMode;
+  }
+}
 
 export interface SparkParticle {
   x: number;
@@ -75,6 +111,96 @@ interface IdeCodeViewportProps {
   onResetEngine: () => void;
 }
 
+interface LineModel {
+  text: string;
+  startIndex: number;
+  endIndex: number;
+}
+
+interface CodeLineProps {
+  line: LineModel;
+  currentIndex: number;
+  status: EngineStatus;
+  gameMode: GameMode;
+  errors: Set<number>;
+  errorVersion: number;
+  syntaxColors: string[];
+  setCharRef: (index: number, el: HTMLSpanElement | null) => void;
+}
+
+const MemoizedCodeLine = memo(
+  function CodeLine({
+    line,
+    currentIndex,
+    status,
+    gameMode,
+    errors,
+    syntaxColors,
+    setCharRef,
+  }: CodeLineProps) {
+    const chars = line.text.split('');
+    return (
+      <>
+        {chars.map((char, offset) => {
+          const i = line.startIndex + offset;
+          let charState: CharNodeProps['state'] = 'untyped';
+          let isFaded = false;
+
+          if (i < currentIndex) {
+            charState = errors.has(i) ? 'error' : 'correct';
+            if (status === 'typing' && i < currentIndex - 1 && gameMode === 'zen') {
+              isFaded = true;
+            }
+          } else if (i === currentIndex) {
+            charState = errors.has(i) ? 'active-error' : 'active';
+          }
+
+          return (
+            <div
+              key={i}
+              style={{
+                opacity: isFaded ? 0.15 : 1,
+                transition: 'opacity 0.3s ease',
+                display: 'inline',
+              }}
+            >
+              <CharNode
+                index={i}
+                char={char}
+                state={charState}
+                syntaxColor={syntaxColors[i]}
+                setRef={setCharRef}
+              />
+            </div>
+          );
+        })}
+      </>
+    );
+  },
+  (prev, next) => {
+    if (prev.line.text !== next.line.text || prev.line.startIndex !== next.line.startIndex) {
+      return false;
+    }
+    if (prev.status !== next.status || prev.gameMode !== next.gameMode) {
+      return false;
+    }
+
+    const wasActive =
+      prev.currentIndex >= prev.line.startIndex && prev.currentIndex <= prev.line.endIndex + 1;
+    const isActive =
+      next.currentIndex >= next.line.startIndex && next.currentIndex <= next.line.endIndex + 1;
+
+    if (!wasActive && !isActive) {
+      return true;
+    }
+
+    return (
+      prev.currentIndex === next.currentIndex &&
+      prev.errorVersion === next.errorVersion
+    );
+  }
+);
+
 const IdeCodeViewport = memo(function IdeCodeViewport({
   code,
   activeSnippet,
@@ -108,6 +234,27 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
   onResetEngine,
 }: IdeCodeViewportProps) {
   const [scrollOffsetY, setScrollOffsetY] = useState<number>(0);
+  const [isTouchDevice, setIsTouchDevice] = useState<boolean>(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const coarse = window.matchMedia?.('(pointer: coarse)').matches;
+      setIsTouchDevice(Boolean(coarse));
+      const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+      setPrefersReducedMotion(mediaQuery.matches);
+      const listener = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const coarse = window.matchMedia?.('(pointer: coarse)').matches;
+      setIsTouchDevice(Boolean(coarse));
+    }
+  }, []);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
@@ -117,7 +264,6 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
   const sparkCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const sparksRef = useRef<SparkParticle[]>([]);
 
-  // When keyboard is hidden, gently boost effective font scale by +2px so code fills the expanded IDE naturally
   const effectiveFontSize = showKeyboard ? fontSize : fontSize + 2;
   const lineHeightPx = Math.round(effectiveFontSize * 1.75);
 
@@ -137,7 +283,7 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
 
   useEffect(() => {
     sparkTriggerRef.current = () => {
-      if (streak < 10) return;
+      if (prefersReducedMotion || streak < 10) return;
       const p = caretPhysicsRef.current;
       for (let i = 0; i < 4; i++) {
         const angle = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
@@ -159,9 +305,25 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
   }, []);
 
   const syntaxColors = useMemo(() => tokenizeSyntaxColors(code), [code]);
-  const lineCount = useMemo(() => code.split('\n').length, [code]);
+  const lineModels = useMemo<LineModel[]>(() => {
+    const rawLines = code.split('\n');
+    const models: LineModel[] = [];
+    let cursor = 0;
+    for (let idx = 0; idx < rawLines.length; idx++) {
+      const text = idx < rawLines.length - 1 ? rawLines[idx] + '\n' : rawLines[idx];
+      models.push({
+        text,
+        startIndex: cursor,
+        endIndex: cursor + text.length - 1,
+      });
+      cursor += text.length;
+    }
+    return models;
+  }, [code]);
+  const lineCount = lineModels.length;
+  const indentLabel = useMemo(() => detectSnippetIndentation(code), [code]);
+  const modeLabel = useMemo(() => formatStatusBarMode(gameMode), [gameMode]);
 
-  // Compute live cursor Line & Column for the bottom IDE status bar
   const cursorPosition = useMemo(() => {
     const sliced = code.slice(0, currentIndex);
     const lines = sliced.split('\n');
@@ -228,7 +390,7 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
       const el = caretRef.current;
 
       if (el && p.initialized) {
-        if (caretSmoothness === 'instant') {
+        if (prefersReducedMotion || caretSmoothness === 'instant') {
           p.currX = p.targetX;
           p.currY = p.targetY;
           p.currW = p.targetW;
@@ -259,7 +421,7 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
         const dx = Math.abs(p.targetX - p.currX);
         const sameLine = Math.abs(p.targetY - p.currY) < 8;
         const stretchExtra =
-          velocityStretch && sameLine && caretSmoothness !== 'instant'
+          !prefersReducedMotion && velocityStretch && sameLine && caretSmoothness !== 'instant'
             ? Math.min(dx * 0.38, 14)
             : 0;
 
@@ -367,8 +529,9 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
           )}
 
           {gameMode === 'smartcoach' && (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-bold">
-              <BrainCircuit className="w-3 h-3" /> SMART WEAKNESS COACH
+            <span style={{ color: theme.accent, borderColor: `${theme.accent}44`, backgroundColor: `${theme.accent}18` }}
+            className="flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold">
+              <BrainCircuit className="w-3 h-3" /> WEAK SPOTS
             </span>
           )}
 
@@ -437,6 +600,7 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
 
           <button
             onClick={onResetEngine}
+            aria-label="Restart snippet"
             className="text-neutral-500 hover:text-white transition-colors cursor-pointer"
             title="Restart Snippet (Esc)"
           >
@@ -444,6 +608,12 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
           </button>
         </div>
       </div>
+
+      {isTouchDevice && (
+        <div className="px-5 py-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-200 text-xs font-mono flex items-center justify-center">
+          This test needs a physical keyboard
+        </div>
+      )}
 
       {/* Code Viewport */}
       <div
@@ -512,31 +682,19 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
               }`}
             />
 
-            {code.split('').map((char, i) => {
-              let charState: any = 'untyped';
-              if (i < currentIndex) {
-                charState = errors.has(i) ? 'error' : 'correct';
-              } else if (i === currentIndex) {
-                charState = errors.has(i) ? 'active-error' : 'active';
-              }
-
-              if (status === "typing" && i < currentIndex - 1 && gameMode === "zen") {
-                 // Confidence Mode: Fade out text immediately after typing to prevent visual backspacing
-                 charState = "faded";
-              }
-
-              return (
-                <div key={i} style={{ opacity: charState === "faded" ? 0.15 : 1, transition: "opacity 0.3s ease", display: "inline" }}>
-                  <CharNode
-                    index={i}
-                    char={char}
-                    state={charState}
-                    syntaxColor={syntaxColors[i]}
-                    setRef={setCharRef}
-                  />
-                </div>
-              );
-            })}
+            {lineModels.map((line) => (
+              <MemoizedCodeLine
+                key={line.startIndex}
+                line={line}
+                currentIndex={currentIndex}
+                status={status}
+                gameMode={gameMode}
+                errors={errors}
+                errorVersion={errorVersion}
+                syntaxColors={syntaxColors}
+                setCharRef={setCharRef}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -546,14 +704,31 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5 font-semibold" style={{ color: theme.accent }}>
             <GitBranch className="w-3 h-3" />
-            main*
+            {modeLabel}
           </span>
-          <span className="flex items-center gap-1 text-neutral-400">
-            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-            {errors.size} errors
+          <span className="flex items-center gap-1">
+            {errors.size === 0 ? (
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            ) : errors.size <= 3 ? (
+              <AlertTriangle className="w-3 h-3 text-amber-400" />
+            ) : (
+              <XCircle className="w-3 h-3 text-rose-400" />
+            )}
+            <span
+              className={
+                errors.size === 0
+                  ? 'text-emerald-400'
+                  : errors.size <= 3
+                  ? 'text-amber-400'
+                  : 'text-rose-400'
+              }
+            >
+              {errors.size} {errors.size === 1 ? 'error' : 'errors'}
+            </span>
           </span>
           <span className="hidden sm:inline text-neutral-500">
-            Syntax Acc: <strong className="text-neutral-300">{stats.syntaxAccuracy ?? 100}%</strong>
+            WPM <strong className="text-neutral-200">{stats.wpm}</strong> • Streak{' '}
+            <strong className="text-neutral-200">{streak}x</strong>
           </span>
         </div>
 
@@ -562,8 +737,7 @@ const IdeCodeViewport = memo(function IdeCodeViewport({
             Ln <strong className="text-white">{cursorPosition.ln}</strong>, Col{' '}
             <strong className="text-white">{cursorPosition.col}</strong>
           </span>
-          <span className="hidden md:inline">Spaces: 2</span>
-          <span className="hidden sm:inline">UTF-8</span>
+          <span className="hidden md:inline">{indentLabel}</span>
           <span className="uppercase font-bold" style={{ color: theme.accent }}>
             {activeSnippet.label}
           </span>

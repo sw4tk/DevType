@@ -1,4 +1,5 @@
 export type UIStyleId =
+  | 'bento_matte'
   | 'glassmorphism'
   | 'claymorphism'
   | 'neumorphism'
@@ -7,7 +8,6 @@ export type UIStyleId =
   | 'cyber_hud'
   | 'retro_crt'
   | 'holographic'
-  | 'bento_matte'
   | 'carbon_fiber'
   | 'vantablack'
   | 'blueprint';
@@ -24,10 +24,20 @@ export interface UIStyleSpec {
 
 export const UI_STYLES: UIStyleSpec[] = [
   {
+    id: 'bento_matte',
+    name: 'Flat High-Contrast',
+    tagline: 'Zero-glare flat dark surface with crisp high-contrast borders and emerald accent',
+    badge: 'DEFAULT',
+    cardClass: 'bg-[#101013] border border-white/20 rounded-2xl shadow-xl',
+    buttonClass:
+      'bg-[#18181c] hover:bg-[#222228] border border-white/20 rounded-xl transition-all',
+    pillClass: 'bg-[#0a0a0c] border border-white/15 rounded-xl',
+  },
+  {
     id: 'glassmorphism',
     name: 'Specular Glassmorphism',
-    tagline: 'Linear & Raycast translucent crystal with 1px top specular refraction',
-    badge: 'DEFAULT',
+    tagline: 'Translucent crystal surface with 1px top specular refraction',
+    badge: 'GLASS',
     cardClass:
       'backdrop-blur-2xl bg-white/[0.03] border border-white/[0.09] rounded-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_24px_60px_rgba(0,0,0,0.75)]',
     buttonClass:
@@ -105,23 +115,13 @@ export const UI_STYLES: UIStyleSpec[] = [
   {
     id: 'holographic',
     name: 'Iridescent Holo Foil',
-    tagline: 'Prismatic multi-spectrum border shimmer over deep obsidian glass',
+    tagline: 'Prismatic dual-spectrum border shimmer over deep obsidian glass',
     badge: 'PRISM',
     cardClass:
-      'backdrop-blur-2xl bg-[#0b0b12]/85 border border-fuchsia-400/30 rounded-2xl shadow-[0_0_35px_-5px_rgba(168,85,247,0.22),inset_0_1px_0_rgba(255,255,255,0.25)]',
+      'backdrop-blur-2xl bg-[#0b0b12]/85 border border-cyan-400/30 rounded-2xl shadow-[0_0_35px_-5px_rgba(16,185,129,0.22),inset_0_1px_0_rgba(255,255,255,0.25)]',
     buttonClass:
-      'bg-gradient-to-r from-emerald-500/10 via-violet-500/10 to-pink-500/10 hover:from-emerald-500/20 hover:to-pink-500/20 border border-white/20 rounded-xl transition-all',
-    pillClass: 'bg-black/50 border border-violet-400/20 rounded-xl',
-  },
-  {
-    id: 'bento_matte',
-    name: 'Minimalist Bento Matte',
-    tagline: 'Zero-glare Apple keynote bento grid with crisp hairline dividers',
-    badge: 'MATTE',
-    cardClass: 'bg-[#101013] border border-white/[0.07] rounded-2xl shadow-xl',
-    buttonClass:
-      'bg-[#18181c] hover:bg-[#222228] border border-white/[0.07] rounded-xl transition-all',
-    pillClass: 'bg-[#0a0a0c] border border-white/[0.05] rounded-xl',
+      'bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-cyan-500/10 hover:from-emerald-500/20 hover:to-cyan-500/20 border border-white/20 rounded-xl transition-all',
+    pillClass: 'bg-black/50 border border-teal-400/20 rounded-xl',
   },
   {
     id: 'carbon_fiber',

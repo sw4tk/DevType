@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/client';
 import { fetchUserTelemetry, TypingSessionRecord } from '@/utils/telemetry';
 import { LANGUAGES } from '@/constants/languages';
 import { STUDIO_THEMES, StudioTheme } from '@/constants/themes';
+import { useSettingsStore } from '@/store/settings';
 import {
   ArrowLeft,
   Flame,
@@ -840,17 +841,16 @@ function ProfileTelemetry({ theme }: { theme: StudioTheme }) {
 export default function ProfilePage() {
   const router = useRouter();
   const supabase = createClient();
-  const [theme, setTheme] = useState<StudioTheme>(STUDIO_THEMES[0]);
+  const themeId = useSettingsStore((s) => s.theme);
+  const hydrateAndMigrateLegacy = useSettingsStore((s) => s.hydrateAndMigrateLegacy);
+  const theme = useMemo(
+    () => STUDIO_THEMES.find((t) => t.id === themeId) || STUDIO_THEMES[0],
+    [themeId]
+  );
 
   useEffect(() => {
-    try {
-      const savedThemeId = localStorage.getItem('dt_theme');
-      if (savedThemeId) {
-        const found = STUDIO_THEMES.find((t) => t.id === savedThemeId);
-        if (found) setTheme(found);
-      }
-    } catch {}
-  }, []);
+    hydrateAndMigrateLegacy();
+  }, [hydrateAndMigrateLegacy]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

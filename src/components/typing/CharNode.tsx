@@ -16,7 +16,8 @@ const CharNode = memo(function CharNode({
   index,
   setRef,
 }: CharNodeProps) {
-  let cls = 'text-neutral-600/75';
+  // text-neutral-400 (#a3a3a3) provides 6.07:1 to 7.81:1 contrast across all STUDIO_THEMES (WCAG AA >= 4.5:1)
+  let cls = 'text-neutral-400';
   if (state === 'correct') cls = syntaxColor;
   else if (state === 'error')
     cls = 'text-red-400 bg-red-500/20 rounded-[3px] underline decoration-red-500';
